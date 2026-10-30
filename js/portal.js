@@ -1,0 +1,475 @@
+// Optional accounts and rankings. The game remains playable without the API.
+(() => {
+  'use strict';
+  const localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const apiOrigin = localHost && location.port === '5500'
+    ? `${location.protocol}//${location.hostname}:5501` : location.origin;
+  const defaults = { healthDropChance: 0.05, bossTime: 540, spawnBaseRate: 1.1, spawnGrowth: 0.0115, maxEnemies: 240 };
+  const dialogs = [];
+  let root, toolbar, identity, connection, notices;
+  let offered = false, online = true, initialized = false, sessionPending = null;
+  let lock = null, dialogId = 0, lastToolbar = '';
+
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = String(text);
+    return node;
+  };
+  const button = (label, action, className = '') => {
+    const node = element('button', `portal-button ${className}`, label);
+    node.type = 'button';
+    if (action) node.addEventListener('click', action);
+    return node;
+  };
+  const game = () => window.GAME;
+  const scene = (key) => {
+    try { return game()?.scene?.getScene(key); } catch (_) { return null; }
+  };
+  const active = (key) => {
+    try { return !!game()?.scene?.isActive(key); } catch (_) { return false; }
+  };
+  const paused = (key) => {
+    try { return !!game()?.scene?.isPaused(key); } catch (_) { return false; }
+  };
+
+  function updateToolbar() {
+    if (!toolbar) return;
+    const mode = active('End') ? 'end' : (active('Game') || paused('Game')) ? 'game' : active('Menu') ? 'menu' : '';
+    toolbar.hidden = !mode || active('Intro');
+    toolbar.dataset.mode = mode;
+    const signature = `${portal.user?.id}|${portal.user?.username}|${portal.user?.role}|${online}`;
+    if (signature === lastToolbar) return;
+    lastToolbar = signature;
+    identity.replaceChildren();
+    identity.append(button(portal.user ? portal.user.username : 'Entrar / Criar conta', () => portal.openLogin(), 'portal-identity'));
+    if (portal.isAdmin) {
+      const admin = button('Admin · F2', openAdmin, 'portal-admin');
+      admin.title = 'Abrir ferramentas de administração (F2)';
+      identity.append(admin);
+    }
+    connection.textContent = online ? (portal.user ? (portal.isAdmin ? 'Administrador · fora do ranking' : 'Conta conectada') : 'Modo convidado') : 'Contas offline · convidado disponível';
+    connection.classList.toggle('portal-offline', !online);
+  }
+
+  function applySession(data) {
+    const previous = portal.user;
+    const candidate = data?.user;
+    portal.user = candidate && typeof candidate.username === 'string' && candidate.id != null
+      ? { id: candidate.id, username: candidate.username, role: candidate.role } : null;
+    portal.csrf = portal.user && typeof data?.csrf === 'string' ? data.csrf : null;
+    if (data?.settings && typeof data.settings === 'object') portal.settings = { ...defaults, ...data.settings };
+    if (previous?.role === 'admin' && !portal.isAdmin) [...dialogs].reverse().forEach((dialog) => dialog.close());
+    updateToolbar();
+    if (previous?.id !== portal.user?.id || previous?.username !== portal.user?.username || previous?.role !== portal.user?.role) {
+      window.dispatchEvent(new CustomEvent('muralha-session', { detail: { user: portal.user, settings: portal.settings } }));
+    }
+  }
+
+  async function request(path, options = {}) {
+    if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('Caminho de API inválido.');
+    let url;
+    try { url = new URL(path, apiOrigin); } catch (_) { throw new Error('Abra o jogo pelo servidor local para acessar as contas.'); }
+    if (url.origin !== apiOrigin || !url.pathname.startsWith('/api/')) throw new Error('Caminho de API inválido.');
+    const method = (options.method || 'GET').toUpperCase();
+    const headers = { Accept: 'application/json' };
+    const init = { method, credentials: 'include', headers };
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(options.body);
+    }
+    if (method !== 'GET' && method !== 'HEAD' && portal.csrf) headers['X-CSRF-Token'] = portal.csrf;
+    const controller = new AbortController();
+    init.signal = controller.signal;
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response;
+    try {
+      response = await fetch(url.href, init);
+    } catch (_) {
+      online = false;
+      updateToolbar();
+      const error = new Error('Servidor de contas indisponível. Inicie INICIAR-JOGO.sh e tente novamente. Você pode jogar como convidado.');
+      error.status = 0;
+      throw error;
+    } finally { clearTimeout(timeout); }
+    online = true;
+    updateToolbar();
+    let data;
+    try { data = await response.json(); } catch (_) {
+      const error = new Error('O servidor de contas não retornou uma resposta válida. Use INICIAR-JOGO.sh para iniciar o jogo.');
+      error.status = response.status;
+      if (response.status === 401 || response.status === 403) applySession({ user: null, csrf: null });
+      throw error;
+    }
+    if (!response.ok) {
+      const hadSession = !!portal.user;
+      if (response.status === 401 || response.status === 403) applySession({ user: null, csrf: null });
+      const error = new Error(typeof data?.error === 'string' ? data.error : `Não foi possível concluir a solicitação (${response.status}).`);
+      error.status = response.status;
+      if (hadSession && (response.status === 401 || response.status === 403)) portal.notice(error.message);
+      throw error;
+    }
+    return data;
+  }
+
+  function refreshSession() {
+    if (sessionPending) return sessionPending;
+    sessionPending = request('/api/session').then((data) => { applySession(data); return data; }).finally(() => { sessionPending = null; });
+    return sessionPending;
+  }
+
+  function blockInput() {
+    if (!lock) return;
+    const current = game();
+    const inputs = [current?.input, current?.input?.keyboard];
+    const list = current?.scene?.scenes || [];
+    for (const item of list) inputs.push(item?.input, item?.input?.keyboard);
+    for (const input of inputs) {
+      if (!input || lock.inputs.has(input)) continue;
+      lock.inputs.set(input, input.enabled);
+      input.resetKeys?.();
+      input.enabled = false;
+    }
+    const running = scene('Game');
+    const ui = scene('UI');
+    if (!lock.pausedScene && running && active('Game') && !active('End') && !running.ended && !running.levelUpOpen && !ui?.paused && !ui?.lvlActive) {
+      lock.pausedScene = running;
+      lock.onShutdown = () => { if (lock?.pausedScene === running) lock.pausedScene = null; };
+      running.events?.once('shutdown', lock.onShutdown);
+      current.scene.pause('Game');
+    }
+    if (running?.joy) { running.joy.active = false; running.joy.x = 0; running.joy.y = 0; }
+  }
+
+  function acquireInput() {
+    if (lock) return;
+    const canvasRoot = document.getElementById('game');
+    lock = { inputs: new Map(), pausedScene: null, onShutdown: null, canvasRoot, inert: canvasRoot?.inert };
+    if (canvasRoot) canvasRoot.inert = true;
+    document.body.classList.add('portal-dialog-open');
+    blockInput();
+  }
+
+  function releaseInput() {
+    if (!lock) return;
+    const saved = lock;
+    lock = null;
+    for (const [input, enabled] of saved.inputs) {
+      input.resetKeys?.();
+      input.enabled = enabled;
+    }
+    if (saved.canvasRoot) saved.canvasRoot.inert = saved.inert;
+    document.body.classList.remove('portal-dialog-open');
+    const running = scene('Game');
+    const ui = scene('UI');
+    if (saved.pausedScene) {
+      saved.pausedScene.events?.off('shutdown', saved.onShutdown);
+      if (running === saved.pausedScene && paused('Game') && !active('End') && !running.ended && !running.levelUpOpen && !ui?.paused && !ui?.lvlActive) game().scene.resume('Game');
+    }
+  }
+
+  function openDialog(title) {
+    if (!initialized) initDOM();
+    const previousFocus = document.activeElement;
+    const overlay = element('div', 'portal-overlay');
+    const panel = element('section', 'portal-dialog');
+    const header = element('header', 'portal-dialog-header');
+    const heading = element('h2', '', title);
+    heading.id = `portal-dialog-${++dialogId}`;
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-labelledby', heading.id);
+    panel.tabIndex = -1;
+    const body = element('div', 'portal-dialog-body');
+    const footer = element('footer', 'portal-dialog-footer');
+    let closed = false;
+    const dialog = { body, footer, close() {
+      if (closed) return;
+      closed = true;
+      const index = dialogs.indexOf(dialog);
+      if (index !== -1) dialogs.splice(index, 1);
+      overlay.remove();
+      const top = dialogs[dialogs.length - 1];
+      if (top) { top.panel.removeAttribute('aria-hidden'); top.panel.inert = false; top.panel.focus({ preventScroll: true }); }
+      else {
+        releaseInput();
+        if (previousFocus?.isConnected && !previousFocus.closest('[hidden]')) previousFocus.focus({ preventScroll: true });
+      }
+    }, panel };
+    const closeButton = button('×', dialog.close, 'portal-close');
+    closeButton.setAttribute('aria-label', 'Fechar diálogo');
+    header.append(heading, closeButton);
+    panel.append(header, body, footer);
+    overlay.append(panel);
+    overlay.addEventListener('click', (event) => { if (event.target === overlay) dialog.close(); });
+    const previous = dialogs[dialogs.length - 1];
+    if (previous) { previous.panel.setAttribute('aria-hidden', 'true'); previous.panel.inert = true; }
+    dialogs.push(dialog);
+    acquireInput();
+    root.append(overlay);
+    queueMicrotask(() => {
+      if (!closed && dialogs[dialogs.length - 1] === dialog) (body.querySelector('input, select, textarea, button, [tabindex="0"]') || panel).focus({ preventScroll: true });
+    });
+    return dialog;
+  }
+
+  function field(form, label, name, type, minimum, maximum, autocomplete) {
+    const group = element('label', 'portal-field');
+    group.append(element('span', '', label));
+    const input = element('input');
+    Object.assign(input, { name, type, required: true, minLength: minimum, maxLength: maximum, autocomplete });
+    if (name === 'username') { input.autocapitalize = 'none'; input.spellcheck = false; }
+    group.append(input);
+    form.append(group);
+    return input;
+  }
+
+  function showPassword(dialog) {
+    dialog.body.replaceChildren();
+    dialog.footer.replaceChildren(button('Voltar à conta', () => showAccount(dialog)));
+    dialog.body.append(element('p', 'portal-muted', 'Escolha uma senha de 8 a 128 caracteres.'));
+    const form = element('form', 'portal-form');
+    form.noValidate = true;
+    const current = field(form, 'Senha atual', 'currentPassword', 'password', 8, 128, 'current-password');
+    const next = field(form, 'Nova senha', 'newPassword', 'password', 8, 128, 'new-password');
+    const message = element('p', 'portal-form-message');
+    message.setAttribute('role', 'alert');
+    const submit = button('Alterar senha', null, 'portal-primary');
+    submit.type = 'submit';
+    form.append(message, submit);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      if (current.value.length < 8 || current.value.length > 128 || next.value.length < 8 || next.value.length > 128) { message.textContent = 'As senhas devem ter de 8 a 128 caracteres.'; return; }
+      submit.disabled = true;
+      message.textContent = 'Alterando senha…';
+      try {
+        await request('/api/password', { method: 'POST', body: { currentPassword: current.value, newPassword: next.value } });
+        current.value = ''; next.value = '';
+        portal.notice('Senha alterada.');
+        showAccount(dialog);
+      } catch (error) { message.textContent = error.message; }
+      finally { submit.disabled = false; }
+    });
+    dialog.body.append(form);
+    current.focus();
+  }
+
+  function showAccount(dialog) {
+    dialog.body.replaceChildren();
+    dialog.footer.replaceChildren(button('Fechar', dialog.close));
+    if (!portal.user) { dialog.close(); return; }
+    dialog.body.append(element('p', 'portal-account-name', portal.user.username));
+    dialog.body.append(element('p', 'portal-muted', portal.isAdmin ? 'Conta administrativa. Suas partidas ficam fora do ranking.' : 'Suas melhores partidas podem entrar no ranking da muralha.'));
+    const actions = element('div', 'portal-account-actions');
+    const logout = button('Sair da conta', async () => {
+      logout.disabled = true;
+      try {
+        await request('/api/logout', { method: 'POST' });
+        applySession({ user: null, csrf: null });
+        dialog.close();
+        portal.notice('Você está jogando como convidado.');
+      } catch (error) { portal.notice(error.message); logout.disabled = false; }
+    });
+    actions.append(button('Alterar senha', () => showPassword(dialog)), logout);
+    dialog.body.append(actions);
+  }
+
+  function openLogin() {
+    const dialog = openDialog(portal.user ? 'Minha conta' : 'Entre na muralha');
+    if (portal.user) { showAccount(dialog); return dialog; }
+    if (!online) refreshSession().then(() => { if (portal.user && dialog.panel.isConnected) showAccount(dialog); }).catch(() => {});
+    dialog.body.append(element('p', 'portal-muted', 'Entrar é opcional. Crie uma conta para registrar suas melhores partidas ou continue como convidado.'));
+    const switches = element('div', 'portal-switches');
+    const form = element('form', 'portal-form');
+    form.noValidate = true;
+    const username = field(form, 'Nome de usuário', 'username', 'text', 3, 20, 'username');
+    const password = field(form, 'Senha', 'password', 'password', 8, 128, 'current-password');
+    const hint = element('p', 'portal-muted portal-hint', 'Nome: 3 a 20 caracteres. Senha: 8 a 128 caracteres.');
+    const message = element('p', 'portal-form-message');
+    message.setAttribute('role', 'alert');
+    const submit = button('Entrar', null, 'portal-primary');
+    submit.type = 'submit';
+    let register = false;
+    const choose = (value) => {
+      register = value;
+      loginButton.setAttribute('aria-pressed', String(!value));
+      registerButton.setAttribute('aria-pressed', String(value));
+      submit.textContent = value ? 'Criar conta' : 'Entrar';
+      password.autocomplete = value ? 'new-password' : 'current-password';
+      message.textContent = '';
+    };
+    const loginButton = button('Entrar', () => choose(false));
+    const registerButton = button('Criar conta', () => choose(true));
+    switches.append(loginButton, registerButton);
+    switches.setAttribute('aria-label', 'Entrar ou criar conta');
+    choose(false);
+    form.append(hint, message, submit);
+    dialog.body.append(switches, form);
+    dialog.footer.append(button('Continuar como convidado', dialog.close, 'portal-guest'));
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const name = username.value.trim();
+      if (name.length < 3 || name.length > 20) { message.textContent = 'O nome deve ter de 3 a 20 caracteres.'; username.focus(); return; }
+      if (password.value.length < 8 || password.value.length > 128) { message.textContent = 'A senha deve ter de 8 a 128 caracteres.'; password.focus(); return; }
+      submit.disabled = true; loginButton.disabled = true; registerButton.disabled = true;
+      message.textContent = register ? 'Criando conta…' : 'Entrando…';
+      try {
+        await portal.ready;
+        const data = await request(register ? '/api/register' : '/api/login', { method: 'POST', body: { username: name, password: password.value } });
+        password.value = '';
+        applySession(data);
+        dialog.close();
+        portal.notice(`Bem-vindo, ${portal.user?.username || name}.`);
+      } catch (error) { message.textContent = error.message; }
+      finally { submit.disabled = false; loginButton.disabled = false; registerButton.disabled = false; }
+    });
+    return dialog;
+  }
+
+  const number = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Number(value) || 0);
+  function openLeaderboard() {
+    const dialog = openDialog('Ranking da muralha');
+    dialog.panel.classList.add('portal-dialog-wide');
+    dialog.body.append(element('p', 'portal-muted', 'Melhor partida de cada conta. Administradores e contas suspensas ficam fora da classificação.'));
+    const switches = element('div', 'portal-switches');
+    switches.setAttribute('aria-label', 'Ordenar ranking');
+    const results = element('div', 'portal-ranking-results');
+    results.setAttribute('aria-live', 'polite');
+    const tabs = [];
+    let serial = 0;
+    const load = async (sort) => {
+      const current = ++serial;
+      for (const [key, tab] of tabs) tab.setAttribute('aria-pressed', String(key === sort));
+      results.replaceChildren(element('p', 'portal-muted', 'Carregando ranking…'));
+      try {
+        const data = await request(`/api/leaderboard?sort=${sort}`);
+        if (serial !== current || !dialog.panel.isConnected) return;
+        results.replaceChildren();
+        if (!Array.isArray(data.entries) || !data.entries.length) { results.append(element('p', 'portal-empty', 'A muralha ainda espera seus primeiros recordistas.')); return; }
+        const scroll = element('div', 'portal-table-scroll');
+        scroll.tabIndex = 0;
+        scroll.setAttribute('role', 'region');
+        scroll.setAttribute('aria-label', 'Classificação de jogadores. Role para ver todas as colunas.');
+        const table = element('table', 'portal-table');
+        const caption = element('caption', 'portal-sr-only', `Ranking por ${sort === 'points' ? 'pontos' : sort === 'kills' ? 'abates' : 'dano'}`);
+        const head = element('thead');
+        const row = element('tr');
+        for (const label of ['#', 'Jogador', 'Pontos', 'Abates', 'Dano', 'Tempo', 'Resultado']) { const th = element('th', '', label); th.scope = 'col'; row.append(th); }
+        head.append(row);
+        const body = element('tbody');
+        data.entries.slice(0, 50).forEach((entry, index) => {
+          const tr = element('tr');
+          const seconds = Math.max(0, Math.floor(Number(entry.duration) || 0));
+          const values = [entry.rank ?? index + 1, entry.username, number(entry.points), number(entry.kills), number(entry.damage), `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, entry.victory ? 'Vitória' : 'Derrota'];
+          for (const value of values) tr.append(element('td', '', value ?? '—'));
+          body.append(tr);
+        });
+        table.append(caption, head, body); scroll.append(table); results.append(scroll);
+      } catch (error) {
+        if (serial !== current || !dialog.panel.isConnected) return;
+        results.replaceChildren(element('p', 'portal-form-message', error.message), button('Tentar novamente', () => load(sort)));
+      }
+    };
+    for (const [key, label] of [['points', 'Pontos'], ['kills', 'Abates'], ['damage', 'Dano']]) {
+      const tab = button(label, () => load(key)); tabs.push([key, tab]); switches.append(tab);
+    }
+    dialog.body.append(switches, results);
+    dialog.footer.append(button('Fechar', dialog.close));
+    load('points');
+    return dialog;
+  }
+
+  function openAdmin() {
+    if (!portal.isAdmin) return;
+    if (window.GameAdmin?.open) window.GameAdmin.open();
+    else portal.notice('O painel de administração ainda não está disponível.');
+  }
+
+  function handleKeyboard(event) {
+    const top = dialogs[dialogs.length - 1];
+    if (!top) {
+      if (event.type === 'keydown' && event.key === 'F2' && portal.isAdmin) { event.preventDefault(); event.stopImmediatePropagation(); openAdmin(); }
+      return;
+    }
+    if (event.type !== 'keydown') return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); top.close(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = [...top.panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')].filter((node) => !node.disabled && node.tabIndex >= 0 && !node.hidden && node.getClientRects().length);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (!first) { event.preventDefault(); top.panel.focus(); }
+    else if (event.shiftKey && (document.activeElement === first || !top.panel.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || !top.panel.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    event.stopImmediatePropagation();
+  }
+
+  function initDOM() {
+    if (initialized || !document.body) return;
+    initialized = true;
+    root = element('div', 'portal-root');
+    root.id = 'portal-root';
+    toolbar = element('nav', 'portal-toolbar');
+    toolbar.hidden = true;
+    toolbar.setAttribute('aria-label', 'Conta e ranking');
+    identity = element('div', 'portal-toolbar-actions');
+    connection = element('span', 'portal-connection');
+    toolbar.append(connection, identity, button('Ranking', openLeaderboard));
+    notices = element('div', 'portal-notices');
+    notices.setAttribute('role', 'status');
+    notices.setAttribute('aria-live', 'polite');
+    root.append(toolbar, notices);
+    for (const type of ['keydown', 'keyup', 'keypress', 'pointerdown', 'pointerup', 'click', 'wheel']) root.addEventListener(type, (event) => event.stopPropagation());
+    document.body.append(root);
+    window.addEventListener('keydown', handleKeyboard, true);
+    window.addEventListener('keyup', handleKeyboard, true);
+    for (const type of ['keydown', 'keyup', 'keypress']) document.addEventListener(type, (event) => { if (dialogs.length || root.contains(event.target)) event.stopImmediatePropagation(); });
+    setInterval(() => { updateToolbar(); if (dialogs.length) blockInput(); }, 200);
+    setInterval(() => { if (portal.user && !document.hidden) refreshSession().catch(() => {}); }, 15000);
+    const recheck = () => { if (!document.hidden && (portal.user || !online)) refreshSession().catch(() => {}); };
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+    updateToolbar();
+  }
+
+  const portal = window.GamePortal = {
+    user: null,
+    csrf: null,
+    settings: { ...defaults },
+    get isAdmin() { return this.user?.role === 'admin'; },
+    request,
+    openDialog,
+    openLogin,
+    openLeaderboard,
+    notice(text) {
+      if (!initialized) initDOM();
+      if (!notices) return;
+      const node = element('p', 'portal-notice', text);
+      notices.append(node);
+      while (notices.children.length > 3) notices.firstElementChild.remove();
+      setTimeout(() => node.remove(), 7000);
+    },
+    offerLogin() {
+      if (offered) return;
+      offered = true;
+      return this.ready.then(() => { if (!this.user) return this.openLogin(); });
+    },
+    async beginRun(hero, practice = false) {
+      await this.ready;
+      if (!this.user) return { run_id: null, ranked: false };
+      try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice } }); }
+      catch (error) { this.notice(error.message); return { run_id: null, ranked: false }; }
+    },
+    async finishRun(payload) {
+      if (!payload?.run_id || !this.user) return { saved: false, ranked: false, points: 0 };
+      try { return await request('/api/runs/finish', { method: 'POST', body: payload }); }
+      catch (error) { this.notice(error.message); return { saved: false, ranked: false, points: 0 }; }
+    },
+  };
+  portal.ready = (async () => {
+    if (!document.body) await new Promise((resolve) => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    initDOM();
+    try { await refreshSession(); } catch (_) { /* Guest mode does not depend on the server. */ }
+    return portal;
+  })();
+})();

@@ -1,0 +1,31 @@
+A ÚLTIMA MURALHA — como rodar
+
+1) Descompacte a pasta.
+2) Abra index.html no navegador (Chrome/Edge/Firefox). O Phaser e a logo já estão incluídos, então funciona offline e com duplo clique.
+   Se o navegador bloquear algo, rode um servidor local dentro da pasta:
+       python3 -m http.server 8000
+   e abra http://localhost:8000
+
+Ao abrir: tela de abertura (logo, nome, colégio, curso e descrição). O botão OK aparece depois de ~5 s
+(ou ENTER/clique). Se ninguém clicar, segue sozinha em 15 s e sobe devagar mostrando o menu.
+
+Controles: WASD ou setas para mover (os ataques são automáticos), P pausa, M liga/desliga o som, F tela cheia.
+
+Onde editar:
+  js/config.js      nome do jogo, textos e tempos da abertura, balanceamento, limites de desempenho, tempo do chefe
+  js/landscape.js   paisagem animada do menu (ciclo de dia, pôr do sol, noite, nascer do sol)
+  js/intro.js       tela de abertura
+  js/data.js        personagens, poderes, melhorias
+  js/enemies.js     os 24 inimigos e a IA
+  js/boss.js        Cavaleiro Sombrio e seus ataques
+  js/map.js         cenário da fase (gerado uma vez por partida, com semente fixa)
+  assets/logo-60-anos.png   logo original (a versão usada no jogo está embutida em js/logo.js)
+
+Parâmetros de teste na URL:
+  ?nointro        pula a tela de abertura
+  ?hora=50&fixo   congela o fundo do menu num ponto do ciclo (0-84 s: dia 0-34, pôr do sol 44, noite 54-68, nascer 76)
+  ?boss=30        chefe aos 30 segundos
+  &god            invencível
+  &debug          mostra FPS e contagem de inimigos
+  &t=200          começa aos 200 segundos de partida
+  &char=vanguard | ranger | mage   pula a abertura e a seleção de personagem
