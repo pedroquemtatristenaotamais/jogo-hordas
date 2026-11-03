@@ -358,3 +358,128 @@ const POWER_IMPL = {
     },
   },
 };
+
+// Persistent effects belong to their weapon instance and vanish on transformation.
+function progressionZone(p, x, y, radius, duration, kind) {
+  const sprite = p.scene.add.image(x, y, 'fx_' + kind).setDepth(y + 2).setAlpha(0.45).setScale(radius / 24);
+  p.state.zones.push({ x, y, radius, life: duration, tick: 0, sprite, kind });
+}
+function updateProgressionZones(p, dt) {
+  const sc = p.scene;
+  for (let i = p.state.zones.length - 1; i >= 0; i--) {
+    const z = p.state.zones[i]; z.life -= dt; z.tick -= dt;
+    if (z.life <= 0) {
+      if (z.kind === 'singularity') sc.explodeAt(z.x, z.y, z.radius, p.dmg(), 'dark', 220);
+      z.sprite.destroy(); p.state.zones.splice(i, 1); continue;
+    }
+    z.sprite.setRotation(sc.t * (z.kind === 'singularity' ? 2 : 0.2));
+    const enemies = sc.queryEnemies(z.x, z.y, z.radius, sc.tmpC).slice();
+    for (const e of enemies) {
+      if (z.kind === 'singularity') {
+        const dx = z.x - e.x, dy = z.y - e.y, d = Math.hypot(dx, dy) || 1;
+        const pull = Math.min(d, 105 * dt * (e.def && e.def.kb !== undefined ? e.def.kb : 1));
+        e.x += dx / d * pull; e.y += dy / d * pull;
+      }
+      if (z.tick > 0) continue;
+      sc.damageEnemy(e, p.dmg() * (z.kind === 'singularity' ? 0.18 : 1), { x: z.x, y: z.y, knock: 0, kind: z.kind });
+      if (z.kind === 'miasma' && !e.alive && p.state.zones.length < 12) progressionZone(p, e.x, e.y, z.radius * 0.65, 2, 'miasma');
+    }
+    if (z.tick <= 0) z.tick = 0.5;
+  }
+}
+function progressionCleanup(p) {
+  for (const z of p.state.zones || []) z.sprite.destroy();
+  for (const a of p.state.axes || []) a.sprite.destroy();
+  p.state.zones = []; p.state.axes = [];
+}
+for (const id of ['poison', 'inferno', 'miasma', 'singularity']) POWER_IMPL[id] = {
+  init(p) { p.state.zones = []; }, destroy: progressionCleanup,
+  update(p, dt) {
+    updateProgressionZones(p, dt); p.timer -= dt;
+    if (p.timer > 0) return;
+    const t = nearestEnemies(p.scene, p.player.x, p.player.y, p.range(), 1)[0];
+    if (!t) { p.timer = 0.15; return; }
+    p.timer = p.cd(); p.cast();
+    if (id === 'inferno') p.scene.explodeAt(t.x, t.y, p.area(p.s.radius), p.dmg(), 'fire', 90);
+    if (p.state.zones.length < 12) progressionZone(p, t.x, t.y, p.area(p.s.radius), p.s.duration, id);
+  },
+};
+for (const id of ['axes', 'reaper_axes']) POWER_IMPL[id] = {
+  init(p) { p.state.axes = []; p.state.angle = 0; }, destroy: progressionCleanup,
+  update(p, dt) {
+    const sc = p.scene, pl = p.player; p.timer -= dt;
+    if (p.timer <= 0 && p.state.axes.length < 12) {
+      p.timer = p.cd(); p.cast();
+      const target = nearestEnemies(sc, pl.x, pl.y, p.range(), 1)[0];
+      const aim = target ? Math.atan2(target.y - pl.y, target.x - pl.x) : Math.atan2(pl.aim.y, pl.aim.x);
+      for (let i = 0; i < p.s.count; i++) p.state.axes.push({ age: 0, angle: aim + (i - (p.s.count - 1) / 2) * 0.65, hits: new Map(), sprite: sc.add.image(pl.x, pl.y, 'p_' + id).setDepth(9100) });
+    }
+    for (let i = p.state.axes.length - 1; i >= 0; i--) {
+      const a = p.state.axes[i]; a.age += dt;
+      if (a.age >= 1.5) { a.sprite.destroy(); p.state.axes.splice(i, 1); continue; }
+      const distance = Math.sin(a.age / 1.5 * Math.PI) * p.range();
+      const angle = a.angle + a.age * (id === 'reaper_axes' ? 2.4 : 0.65);
+      const x = pl.x + Math.cos(angle) * distance, y = pl.y + Math.sin(angle) * distance;
+      a.sprite.setPosition(x, y).setRotation(a.age * 16);
+      const pass = a.age < 0.75 ? 1 : 2;
+      for (const e of sc.queryEnemies(x, y, p.area(p.s.radius), sc.tmpB).slice()) {
+        if (a.hits.get(e.uid) === pass) continue;
+        a.hits.set(e.uid, pass);
+        const damage = id === 'reaper_axes' && e.hp < p.dmg() * 1.5 ? p.dmg() * 2 : p.dmg();
+        sc.damageEnemy(e, damage, { x: pl.x, y: pl.y, knock: 100, kind: id });
+      }
+    }
+  },
+};
+for (const id of ['frost', 'blizzard']) POWER_IMPL[id] = {
+  update(p, dt) {
+    p.timer -= dt; if (p.timer > 0) return; p.timer = p.cd(); p.cast();
+    const sc = p.scene, pl = p.player, r = p.area(p.s.radius);
+    const target = id === 'blizzard' ? pl : nearestEnemies(sc, pl.x, pl.y, p.range(), 1)[0];
+    if (!target) return;
+    sc.fx.ring(target.x, target.y, 10, r, 0.45, 0x91eaff, 3, 0.15);
+    for (const e of sc.queryEnemies(target.x, target.y, r, sc.tmpB).slice()) {
+      sc.damageEnemy(e, p.dmg(), { x: target.x, y: target.y, knock: id === 'blizzard' ? 100 : 190, kind: 'frost' });
+      // Enemy manager consumes timed slow; do not modify permanent base speed.
+      e.slowUntil = Math.max(e.slowUntil || 0, sc.t + (id === 'blizzard' ? 1 : 2));
+      e.slowFactor = 0.45;
+    }
+  },
+};
+POWER_IMPL.soulblade = { update(p, dt) {
+  p.timer -= dt; if (p.timer > 0) return; p.timer = p.cd(); p.cast();
+  const sc = p.scene, pl = p.player, r = p.range() * pl.mods.area;
+  sc.fx.sweep(pl.x, pl.y, r, pl);
+  const list = sc.queryEnemies(pl.x, pl.y, r, sc.tmpB).slice();
+  for (const e of list) sc.damageEnemy(e, p.dmg(), { x: pl.x, y: pl.y, knock: 300, kind: 'soulblade' });
+  if (list.length) pl.heal(Math.min(4, list.length));
+} };
+POWER_IMPL.tempest = { update(p, dt) {
+  p.timer -= dt; if (p.timer > 0) return; p.timer = p.cd(); p.cast();
+  const sc = p.scene, pl = p.player;
+  const targets = nearestEnemies(sc, pl.x, pl.y, p.range(), 4);
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i], x = t.x, y = t.y;
+    p.after(i * 0.09, () => { sc.fx.bolt(x, y - 230, x, y, 0.2, 0x9edfff); sc.explodeAt(x, y, p.area(p.s.radius), p.dmg(), 'dark', 35, 0x9edfff); });
+  }
+} };
+POWER_IMPL.celestial_ring = {
+  init(p) { p.state.angle = 0; p.state.sprites = Array.from({ length: p.s.count }, () => p.scene.add.image(0, 0, 'p_celestial_ring').setDepth(9100)); },
+  destroy(p) { for (const s of p.state.sprites) s.destroy(); },
+  update(p, dt) {
+    p.state.angle += dt * p.s.speed;
+    const sc = p.scene, pl = p.player;
+    for (let i = 0; i < p.s.count; i++) {
+      const crown = i % 2, position = Math.floor(i / 2);
+      const angle = position * Math.PI * 2 / (p.s.count / 2)
+        + p.state.angle * (crown ? -1 : 1) + crown * Math.PI / 4;
+      const r = p.area(p.s.radius + Math.sin(sc.t * 2 + crown * Math.PI) * 65);
+      const x = pl.x + Math.cos(angle) * r, y = pl.y + Math.sin(angle) * r;
+      p.state.sprites[i].setPosition(x, y).setRotation(angle);
+      for (const e of sc.queryEnemies(x, y, 28 * pl.mods.area, sc.tmpC).slice()) {
+        if (sc.t - (e.hitT.celestial_ring ?? -9) < p.s.hitCd) continue;
+        e.hitT.celestial_ring = sc.t; sc.damageEnemy(e, p.dmg(), { x: pl.x, y: pl.y, knock: 180, kind: 'celestial_ring' });
+      }
+    }
+  },
+};

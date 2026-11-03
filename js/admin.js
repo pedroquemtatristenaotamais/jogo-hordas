@@ -161,7 +161,7 @@ const GameAdmin = window.GameAdmin = {
         const grid = node('div', '', 'admin-grid'); content.append(grid);
         const fields = {
           healthDropChance: field(grid, 'Chance de cura (%)', (settings.healthDropChance ?? 0.05) * 100, { min: 0, max: 100 }),
-          bossTime: field(grid, 'Chefe após (segundos)', settings.bossTime ?? 540, { min: 10, max: 3600 }),
+          bossTime: field(grid, 'Chefe após (segundos)', settings.bossTime ?? 900, { min: 10, max: 3600 }),
           spawnBaseRate: field(grid, 'Inimigos por segundo', settings.spawnBaseRate ?? 1.1, { min: 0, max: 20 }),
           spawnGrowth: field(grid, 'Aumento das hordas por segundo', settings.spawnGrowth ?? 0.0115, { min: 0, max: 0.1 }),
           maxEnemies: field(grid, 'Máximo de inimigos', settings.maxEnemies ?? 240, { min: 1, max: 240, step: 1 }),

@@ -23,7 +23,7 @@ const CONFIG = {
   world: { w: 4000, h: 4000, border: 150 },     // mapa grande; borda = muralha
   arena: { x: 2000, y: 2000, r: 520 },          // arena da batalha final (centro do mapa)
 
-  bossTime: 540,          // segundos até o Cavaleiro Sombrio despertar (?boss=30 para testar)
+  bossTime: 900,          // segundos até o Cavaleiro Sombrio despertar (?boss=30 para testar)
   seed: 20260,            // semente do cenário (mesmo cenário em toda partida)
 
   // Limites de desempenho

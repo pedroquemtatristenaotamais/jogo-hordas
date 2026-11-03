@@ -19,7 +19,8 @@ class EnemyShots {
     const d = Object.assign({}, ENEMY_SHOTS[type], over || {});
     for (const s of this.items) {
       if (s.live) continue;
-      s.live = true;
+      s.live = true; s.slow = d.slow || 0; s.clearTint();
+      if (d.tint) s.setTint(d.tint);
       s.setTexture(d.tex).setPosition(x, y).setVisible(true).setActive(true).setRotation(d.rot ? ang : 0);
       s.vx = Math.cos(ang) * d.speed; s.vy = Math.sin(ang) * d.speed;
       s.dmg = d.dmg * (dmgMul || 1); s.rad = d.radius; s.life = d.life; s.spin = !d.rot;
@@ -40,7 +41,7 @@ class EnemyShots {
       if (s.life <= 0 || sc.world.outside(s.x, s.y)) { this.kill(s); continue; }
       const dx = p.x - s.x, dy = p.y - s.y, rr = s.rad + p.radius;
       if (dx * dx + dy * dy < rr * rr) {
-        if (p.takeDamage(s.dmg)) { sc.fx.burst('dark', s.x, s.y, 5); this.kill(s); }
+        if (p.takeDamage(s.dmg)) { if (s.slow) p.slowT = Math.max(p.slowT || 0, s.slow); sc.fx.burst('dark', s.x, s.y, 5); this.kill(s); }
         else if (p.invuln > 0 && p.invuln < CONFIG.player.invuln) { /* atravessa durante invulnerabilidade */ }
       }
     }
@@ -129,17 +130,26 @@ class EnemyManager {
   }
 
   // --- criação ---
-  spawn(typeId, x, y, hpMul, summoned) {
+  ordinaryCapacity() {
+    const pending = this.scene.encounters ? this.scene.encounters.spawned.filter(done => !done).length : 2;
+    return this.pool.length - Math.min(pending, Math.max(0, this.pool.length - 1));
+  }
+
+  spawn(typeId, x, y, hpMul, summoned, scheduled = false) {
+    // Every ordinary source (director, events and summoners) shares this limit.
+    if (!scheduled && this.alive >= this.ordinaryCapacity()) return null;
     let e = null;
     for (const c of this.pool) { if (!c.alive) { e = c; break; } }
     if (!e) return null;
     const d = ENEMIES[typeId], art = ENEMY_ART[typeId];
     e.def = d; e.id = typeId; e.uid = ENEMY_UID++;
     e.alive = true; e.x = x; e.y = y; e.radius = d.radius;
-    e.maxHp = e.hp = d.hp * hpMul;
+    e.maxHp = e.hp = d.hp * (hpMul || 1) * this.scene.difficulty.hpMul;
+    e.isMiniBoss = false; e.isBoss = false; e.miniIndex = 0; e.miniRewarded = false;
+    e.slowUntil = 0; e.slowFactor = 1; e.spiralCd = 2;
     e.kx = 0; e.ky = 0; e.flash = 0;
     e.state = 'chase'; e.stateT = 0; e.cdx = 0; e.cdy = 0;
-    e.atkCd = rand(0.5, 1.8); e.contactCd = 0; e.chargeCd = rand(0.5, 2.0);
+    e.atkCd = rand(0.5, 1.8); e.shellCd = rand(0.5, 1.8); e.contactCd = 0; e.chargeCd = rand(0.5, 2.0);
     e.summonCd = rand(2, 4); e.face = 0; e.phase = Math.random() * 6.28;
     e.strafe = Math.random() < 0.5 ? 1 : -1;
     e.ghost = !!d.ghost; e.summoned = !!summoned;
@@ -165,9 +175,11 @@ class EnemyManager {
     sc.fx.corpse(e);
     sc.player.kills++;
     sc.totalKills++;
-    if (!sc.gems.drop(e.x, e.y, e.def.xp)) sc.player.gainXp(e.def.xp);
+    sc.encounters?.onKill(e);
+    const xp = e.def.xp * sc.difficulty.xpMul;
+    if (xp > 0 && !sc.gems.drop(e.x, e.y, xp)) sc.player.gainXp(xp);
     // Cura também pode cair dos inimigos das primeiras hordas.
-    if (Math.random() < CONFIG.healthDropChance) sc.gems.drop(e.x + 10, e.y, 0, 'meat');
+    if (Math.random() < CONFIG.healthDropChance * sc.difficulty.healMul) sc.gems.drop(e.x + 10, e.y, 0, 'meat');
     if (e.def.radius >= 24) sc.cameras.main.shake(90, 0.004);
   }
 
@@ -179,8 +191,9 @@ class EnemyManager {
     for (let i = 0; i < this.ids.length; i++) {
       const id = this.ids[i], d = ENEMIES[id];
       let w = 0;
-      if (t >= d.from) {
-        w = d.weight * Math.min(1, (t - d.from) / 50 + 0.15);
+      const unlock = d.from / (this.scene.difficulty.id === 'hardcore' ? 2.5 : this.scene.difficulty.id === 'hard' ? 1.3 : 1);
+      if (t >= unlock) {
+        w = d.weight * Math.min(1, (t - unlock) / 50 + 0.15);
         if (d.hp <= 20) w *= Math.max(0.25, 1 - t / 700);
         if (d.maxAlive && (this.counts[id] || 0) >= d.maxAlive) w = 0;
       }
@@ -208,10 +221,10 @@ class EnemyManager {
   director(dt) {
     const sc = this.scene, t = sc.t;
     while (this.eventIdx < EVENTS.length && t >= EVENTS[this.eventIdx].t) this.runEvent(EVENTS[this.eventIdx++]);
-    const rate = CONFIG.spawn.baseRate + t * CONFIG.spawn.growth;
-    const cap = Math.min(CONFIG.maxEnemies, 28 + t * 0.4);
+    const rate = (CONFIG.spawn.baseRate + t * CONFIG.spawn.growth) * sc.difficulty.spawnMul;
+    const cap = Math.min(this.ordinaryCapacity(), (28 + t * 0.4) * sc.difficulty.capMul);
     this.acc += rate * dt;
-    let guard = 6;
+    let guard = 18;
     while (this.acc >= 1 && guard-- > 0) {
       this.acc -= 1;
       if (this.alive >= cap) { this.acc = Math.min(this.acc, 1); break; }
@@ -221,7 +234,7 @@ class EnemyManager {
       const d = ENEMIES[type];
       // inimigos fracos nascem em pequenos grupos
       const group = d.hp <= 20 && Math.random() < 0.4 ? 3 : 1;
-      for (let i = 0; i < group; i++) this.spawn(type, pt.x + rand(-30, 30), pt.y + rand(-30, 30), this.hpMul(t));
+      for (let i = 0; i < group && this.alive < cap; i++) this.spawn(type, pt.x + rand(-30, 30), pt.y + rand(-30, 30), this.hpMul(t));
     }
   }
 
@@ -247,7 +260,7 @@ class EnemyManager {
   update(dt) {
     const sc = this.scene, p = sc.player, t = sc.t;
     if (sc.spawningEnabled) this.director(dt);
-    const dmgScale = sc.dmgScale();
+    const dmgScale = sc.dmgScale() * sc.difficulty.dmgMul;
     for (const e of this.pool) {
       if (!e.alive) continue;
       this.ai(e, dt, p, dmgScale);
@@ -273,7 +286,8 @@ class EnemyManager {
     const n = s.count || 1;
     for (let i = 0; i < n; i++) {
       const off = (i - (n - 1) / 2) * (s.spread || 0.2);
-      sc.enemyShots.fire(s.type, e.x, e.y - 4, ang + off, dmgScale);
+      const shot = ENEMY_SHOTS[s.type];
+      sc.enemyShots.fire(s.type, e.x, e.y - 4, ang + off, dmgScale, { speed:(s.speed || shot.speed) * sc.difficulty.projectileMul, slow:s.slow || 0, tint:s.tint || 0 });
     }
   }
 
@@ -282,13 +296,21 @@ class EnemyManager {
     let dx = p.x - e.x, dy = p.y - e.y;
     const dist = Math.hypot(dx, dy) || 1;
     const nx = dx / dist, ny = dy / dist;
-    e.atkCd -= dt; e.contactCd -= dt; e.chargeCd -= dt;
+    e.atkCd -= dt; e.shellCd -= dt; e.contactCd -= dt; e.chargeCd -= dt;
     // vira devagar na direção do jogador (usado pelo bloqueio do escudo)
     const want = Math.atan2(ny, nx);
     e.face += clamp(angleDiff(want, e.face), -2.2 * dt, 2.2 * dt);
     if (Math.abs(dx) > 4) e.sprite.setFlipX(dx < 0);
 
     let mx = 0, my = 0, speed = d.speed;
+    if (d.spiral && sc.spawningEnabled && !sc.ended && !sc.bossStarted) {
+      e.spiralCd -= dt;
+      if (e.spiralCd <= 0) {
+        e.spiralCd = 1.5; e.phase += .38;
+        sc.fx.ring(e.x,e.y,12,65,.4,0xd6a7ff,2,.2);
+        for(let i=0;i<8;i++) sc.enemyShots.fire('dark',e.x,e.y,e.phase+i*Math.PI/4,dmgScale,{speed:175*sc.difficulty.projectileMul});
+      }
+    }
 
     switch (e.state) {
       case 'chase': {
@@ -306,18 +328,21 @@ class EnemyManager {
           if (Math.random() < 0.004) e.strafe = -e.strafe;
         }
         // disparos
-        if (d.shot && e.atkCd <= 0 && dist < d.shot.range) {
+        if (sc.spawningEnabled && !sc.ended && !sc.bossStarted && d.shot && e.atkCd <= 0 && dist < d.shot.range) {
           this.fireShots(e, Math.atan2(dy, dx), dmgScale);
           e.atkCd = d.shot.cd * rand(0.85, 1.2);
         }
         // artilheiro: marca uma área no chão
-        if (d.shell && e.atkCd <= 0 && dist < d.shell.range) {
-          sc.addHazard({ shape: 'circle', x: p.x, y: p.y, r: d.shell.radius, delay: d.shell.delay, dmg: d.shell.dmg * dmgScale, col: 0xff8a30 });
+        if (sc.spawningEnabled && !sc.ended && !sc.bossStarted && d.shell && e.shellCd <= 0 && dist < d.shell.range) {
+          sc.addHazard({ shape: 'circle', x: p.x, y: p.y, r: d.shell.radius, delay: d.shell.delay, dmg: d.shell.dmg * dmgScale, col: d.poison ? 0x91d442 : d.storm ? 0x8edfff : 0xff8a30 });
+          if (e.isMiniBoss && d.storm) {
+            for (let i=0;i<4;i++) { const a=i*Math.PI/2+e.phase; sc.addHazard({shape:'circle',x:p.x+Math.cos(a)*110,y:p.y+Math.sin(a)*110,r:48,delay:1.45,dmg:d.shell.dmg*dmgScale,col:0x8edfff}); }
+          }
           sc.fx.burst('fire', e.x + (e.sprite.flipX ? -20 : 20), e.y - 6, 6);
-          e.atkCd = d.shell.cd * rand(0.9, 1.15);
+          e.shellCd = d.shell.cd * rand(0.9, 1.15);
         }
         // invocador
-        if (d.summon) {
+        if (d.summon && sc.spawningEnabled && !sc.ended && !sc.bossStarted) {
           e.summonCd -= dt;
           if (e.summonCd <= 0 && this.summoned < 10 && this.alive < CONFIG.maxEnemies - 4) {
             e.summonCd = d.summon.cd;
@@ -361,6 +386,7 @@ class EnemyManager {
         break;
     }
 
+    speed *= sc.difficulty.speedMul * (e.slowUntil > sc.t ? e.slowFactor : 1);
     // movimento + empurrão
     e.x += mx * speed * dt + e.kx * dt;
     e.y += my * speed * dt + e.ky * dt;

@@ -213,6 +213,43 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(tuple(row),('abandoned',0,None))
             self.assertEqual(db.execute('SELECT points FROM runs WHERE id=?',('y'*32,)).fetchone()[0],1234)
 
+    def test_difficulty_is_bound_to_run_and_rankings_are_separate(self):
+        self.register()
+        for difficulty, multiplier in [('easy', .75), ('medium', 1), ('hard', 1.5), ('hardcore', 2.5)]:
+            status, run, _ = self.request('/api/runs/start', {'hero':'vanguard','practice':False,'difficulty':difficulty})
+            self.assertEqual(status, 200, run)
+            self.assertEqual(run['difficulty'], difficulty)
+            self.assertEqual(run['settings']['bossTime'], 900)
+            self.age(run['run_id'], 15)
+            status, result, _ = self.finish(run['run_id'], kills=1, damage=10, duration=15)
+            self.assertEqual(status, 200, result)
+            self.assertEqual(result['points'], int(270 * multiplier))
+            entries = self.request('/api/leaderboard?difficulty=' + difficulty)[1]['entries']
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]['difficulty'], difficulty)
+            self.assertEqual(entries[0]['points'], int(270 * multiplier))
+        self.assertEqual(len(self.request('/api/leaderboard')[1]['entries']), 1)
+        self.assertEqual(self.request('/api/leaderboard?difficulty=impossible')[0], 400)
+        self.assertEqual(self.request('/api/leaderboard?difficulty=easy&difficulty=hard')[0], 400)
+        self.assertEqual(self.request('/api/runs/start', {'hero':'mage','practice':False,'difficulty':'bad'})[0], 400)
+        run = self.start()
+        self.assertEqual(run['difficulty'], 'medium')
+        self.assertEqual(self.finish(run['run_id'], difficulty='hardcore')[0], 400)
+        self.age(run['run_id'], 540)
+        self.assertEqual(self.finish(run['run_id'], duration=540, victory=True)[0], 400)
+
+    def test_stage_migration_preserves_custom_settings_and_legacy_scores(self):
+        legacy = {**self.module.DEFAULT_SETTINGS, 'bossTime':540}
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE settings SET value_json=? WHERE id=1', (json.dumps(legacy),))
+        self.httpd.app.initialize()
+        self.assertEqual(self.request('/api/session')[1]['settings']['bossTime'], 900)
+        custom = {**legacy, 'bossTime':30}
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE settings SET value_json=? WHERE id=1', (json.dumps(custom),))
+        self.httpd.app.initialize()
+        self.assertEqual(self.request('/api/session')[1]['settings']['bossTime'], 30)
+
     def test_run_start_returns_authoritative_settings_snapshot(self):
         self.admin()
         settings={'healthDropChance':.2,'bossTime':30,'spawnBaseRate':1,'spawnGrowth':.01,'maxEnemies':120}

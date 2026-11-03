@@ -1,3 +1,7 @@
+> **Pausa solicitada em 03/11/2026:** expansão salva como trabalho em andamento.
+> Leia [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md) antes de continuar.
+> A regressão de joystick + dash com dois dedos ainda está pendente.
+
 # Checkpoint — 30/10/2026; retomada em 03/11/2026
 
 Checkpoint solicitado pelo usuário antes de sair. Branch: `main`.
@@ -57,3 +61,15 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
   reais de teclado/ponteiro, sem erros JavaScript. Pausa manual e melhorias
   continuam respeitadas.
 - Os sete fluxos integrados de contas/ranking/admin também passaram após a correção, sem erros JavaScript.
+
+## Expansão — 03/11/2026
+
+- Snapshot anterior preservado: tag `snapshot/pre-expansao-20261103-100040` e arquivo em `Downloads/backups-jogo-hordas/`; banco privado também copiado.
+- Partida padrão de 15 minutos, minibosses únicos aos 5 e 10 minutos com XP/baú e chefe final aos 15.
+- Quatro dificuldades: Fácil, Médio, Difícil e Hardcore; ranking separado por modo e pontos calculados com dificuldade vinculada à partida.
+- Três armas comuns novas, seis evoluções, duas uniões, baús e grimório com requisitos/progresso.
+- Dash em Shift/Espaço e botão de toque, três níveis e evolução de fumaça com imunidade apenas durante a esquiva.
+- Quatro inimigos comuns novos com raios, veneno, gelo/lentidão e investidas; dois minibosses com padrões próprios.
+- Compatibilidade de contas/admin/controles mantida. Documentação e referências em [EXPANSAO.md](EXPANSAO.md).
+- API: 19 testes passaram. Navegador: sete fluxos de contas, oito regressões de controles e integração da expansão sem erros JS.
+- Simulação de 900,05 segundos no Hardcore: pico de 240 inimigos, 6569 abates, ambos minibosses e chefe final com 12600 HP; cerca de 6 segundos de CPU no navegador automatizado. Essa simulação usa invencibilidade/escolhas automáticas e não é medição de FPS nem teste de equilíbrio humano.

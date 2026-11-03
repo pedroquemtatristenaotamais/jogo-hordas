@@ -77,8 +77,10 @@ Confere números finitos, estatísticas, vitória após o surgimento do chefe,
 duração máxima de quatro horas e duração compatível com o relógio do servidor
 (tolerância de dez segundos; partidas abertas expiram após 24 horas).
 Os pontos são `abates*100 + floor(dano)*2 + floor(segundos)*10`, mais 5000
-por vitória. A classificação exibe até 50 contas e a melhor partida de cada
-uma para o critério escolhido, excluindo administradores e contas banidas.
+por vitória; o total é multiplicado pelo modo escolhido e arredondado para
+baixo: Fácil 0,75; Médio 1; Difícil 1,5; Hardcore 2,5. A dificuldade é vinculada
+à partida no início; o envio final não pode trocá-la. A classificação exibe até 50 contas e a melhor partida de cada
+uma para o critério e a dificuldade escolhidos, excluindo administradores e contas banidas.
 
 Partidas de admin, treino e iniciadas com parâmetros globais diferentes
 dos padrões ficam fora do ranking. O frontend deve marcar `practice:true`
@@ -140,3 +142,18 @@ python3 tests/browser_accounts.py --controls
 Esse teste usa cliques e teclas reais no navegador: X, botão de fechar, Escape,
 clique fora, teclas seguradas, pausa manual, escolha de melhoria e diálogos
 sobrepostos. Ao fechar a última janela, o foco retorna ao canvas do jogo.
+
+## Expansão de 15 minutos
+
+O início autenticado aceita `{hero, practice, difficulty?}`; sem dificuldade,
+usa `medium`. IDs válidos: `easy`, `medium`, `hard`, `hardcore`. A resposta
+inclui a dificuldade vinculada à partida. `/api/leaderboard` aceita
+`difficulty=medium` (padrão) ou os outros três IDs, além de `sort`.
+Resultados antigos são migrados como Médio. A configuração de fábrica
+migra de 540 para 900 segundos; regras personalizadas permanecem intactas.
+As permissões de poderes e inimigos do admin incluem todos os novos IDs.
+Veja [EXPANSAO.md](EXPANSAO.md) para controles, receitas e balanceamento.
+
+```sh
+python3 tests/browser_accounts.py --expansion
+```

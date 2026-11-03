@@ -17,19 +17,27 @@ class UIScene extends Phaser.Scene {
     this.txtLvl = mkText(this, W / 2, 15, 'NV 1', 14, '#ffffff').setOrigin(0.5).setDepth(12);
     this.heart = this.add.image(30, 50, 'i_heart').setScale(0.6).setDepth(12);
     this.txtHp = mkText(this, 175, 50, '', 15, '#ffffff').setOrigin(0.5).setDepth(12);
-    this.txtTime = mkText(this, W / 2, 50, '00:00', 30, '#e8e0d0').setOrigin(0.5).setDepth(12);
+    this.txtTime = mkText(this, W / 2, 50, '00:00', 26, '#e8e0d0').setOrigin(0.5).setDepth(12);
     this.txtKills = mkText(this, W - 16, 36, '', 18, '#cfc8d8').setOrigin(1, 0).setDepth(12);
     this.txtDamage = mkText(this, W - 16, 64, '', 15, '#c0b5cb').setOrigin(1, 0).setDepth(12);
     this.txtPoints = mkText(this, W - 16, 86, '', 15, '#dfc989').setOrigin(1, 0).setDepth(12);
     this.txtMode = mkText(this, W - 16, 108, '', 12, '#9b8fa8').setOrigin(1, 0).setDepth(12);
-    this.txtBoss = mkText(this, W / 2, 636, 'CAVALEIRO SOMBRIO', 20, '#ff6a6a').setOrigin(0.5).setDepth(12).setVisible(false);
+    this.txtBoss = mkText(this, W / 2, 600, 'CAVALEIRO SOMBRIO', 20, '#ff6a6a').setOrigin(0.5).setDepth(12).setVisible(false);
     this.ann = mkText(this, W / 2, 150, '', 32, '#ffffff', { strokeThickness: 6 }).setOrigin(0.5).setDepth(14).setAlpha(0);
     this.annT = 0;
+    this.txtEvent = mkText(this, W / 2, 85, '', 12, '#a296b3').setOrigin(0.5).setDepth(12);
+    this.txtDash = mkText(this, 20, H - 47, '', 14, '#c6dae8').setDepth(12);
+    this.miniTexts = [0, 1].map(i => mkText(this, W / 2, 566 + i * 44, '', 15, '#d7b6ed').setOrigin(0.5).setDepth(12).setVisible(false));
+    if (this.sys.game.device.input.touch) {
+      this.dashButton = this.add.circle(W - 76, H - 170, 42, 0x21172f, 0.85).setStrokeStyle(3, 0xafa0d0).setDepth(30).setInteractive();
+      this.dashButton.on('pointerdown', (pointer, x, y, event) => { if (!this.paused && !this.lvlActive && !this.G.ended) this.G.requestDash = true; event.stopPropagation(); });
+      mkText(this, W - 76, H - 170, 'DASH', 17, '#ddd2ef').setOrigin(0.5).setDepth(31);
+    }
     this.txtDbg = this.G.debug ? mkText(this, W - 16, 130, '', 13, '#9aff9a').setOrigin(1, 0).setDepth(12) : null;
 
     // casas de poderes (linha 1) e melhorias de atributos (linha 2)
     this.slots = []; this.pslots = [];
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 24; i++) {
       this.slots.push({ img: this.add.image(0, 0, 'i_slash').setVisible(false).setDepth(12), txt: mkText(this, 0, 0, '', 13, '#ffe9a8', { strokeThickness: 3 }).setOrigin(1, 1).setVisible(false).setDepth(13) });
       this.pslots.push({ img: this.add.image(0, 0, 'i_heart').setVisible(false).setDepth(12), txt: mkText(this, 0, 0, '', 11, '#bff0c0', { strokeThickness: 3 }).setOrigin(1, 1).setVisible(false).setDepth(13) });
     }
@@ -82,12 +90,26 @@ class UIScene extends Phaser.Scene {
     this.bar(48, 38, 250, 24, p.hp / p.maxHp, low && Math.floor(time / 180) % 2 ? 0xff5a5a : 0xd02a3a, 0x1a0a10);
     this.setText(this.txtLvl, 'NV ' + p.level);
     this.setText(this.txtHp, Math.ceil(p.hp) + ' / ' + p.maxHp);
-    this.setText(this.txtTime, fmtTime(G.t));
+    this.setText(this.txtTime, fmtTime(G.t) + ' / ' + fmtTime(G.bossTime));
     this.setText(this.txtKills, 'Abates: ' + G.totalKills);
     this.setText(this.txtDamage, 'Dano: ' + Math.floor(G.totalDamage).toLocaleString('pt-BR'));
     this.setText(this.txtPoints, 'Pontos: ' + G.points.toLocaleString('pt-BR'));
-    this.setText(this.txtMode, G.isPractice ? 'TREINO' : GamePortal.user ? GamePortal.user.username : 'VISITANTE');
+    this.setText(this.txtMode, G.difficulty.name.toUpperCase() + ' • ' + (G.isPractice ? 'TREINO' : GamePortal.user ? GamePortal.user.username : 'VISITANTE'));
     if (this.txtDbg) this.setText(this.txtDbg, 'FPS ' + Math.round(this.game.loop.actualFps) + '  inim. ' + G.enemies.alive + '  gemas ' + G.gems.items.filter((s) => s.live).length);
+
+    const next = G.t < 300 ? 'Miniboss: 05:00' : G.t < 600 ? 'Miniboss: 10:00' : 'Chefe final: ' + fmtTime(G.bossTime);
+    this.setText(this.txtEvent, G.bossStarted ? 'A muralha exige sua última batalha' : next);
+    const cooldown = Math.max(0, p.dashCd || 0);
+    const dashName = p.dashSmoke || p.smokeDash ? 'FUMAÇA' : 'DASH';
+    this.setText(this.txtDash, dashName + ' Nv' + p.dashLevel + ' • ' + (cooldown > 0 ? cooldown.toFixed(1) + 's' : 'PRONTO') + '  [SHIFT / ESPAÇO]');
+    this.bar(20, CONFIG.height - 25, 138, 10, 1 - cooldown / p.dashCooldown, p.dashSmoke || p.smokeDash ? 0xc1a2e7 : 0x729cca, 0x100c18);
+    const minis = G.encounters.active;
+    this.miniTexts.forEach((text, i) => {
+      const mini = minis[i]; text.setVisible(!!mini);
+      if (!mini) return;
+      this.setText(text, mini.def.name.toUpperCase());
+      this.bar(W / 2 - 210, 579 + i * 44, 420, 15, mini.hp / mini.maxHp, i ? 0xc9904d : 0x9868d1, 0x130d20);
+    });
 
     // flash vermelho ao levar dano / vida baixa
     const tgt = (p.flash > 0 ? 0.2 : 0) + (low && !p.dead ? 0.07 + 0.05 * Math.sin(time / 150) : 0);
@@ -105,7 +127,7 @@ class UIScene extends Phaser.Scene {
     if (b && (b.alive || b.state === 'dead')) {
       const f = clamp(b.hp / b.maxHp, 0, 1);
       this.bossLag = Math.max(f, this.bossLag - dt * 0.35);
-      const x = 340, y = 658, w = 600, h = 24;
+      const x = 340, y = 622, w = 600, h = 24;
       g.fillStyle(0x12060a, 1); g.fillRect(x, y, w, h);
       g.fillStyle(0xffd0a0, 0.55); g.fillRect(x + 2, y + 2, (w - 4) * this.bossLag, h - 4);
       g.fillStyle(b.fury ? 0xff2a2a : 0xb01828, 1); g.fillRect(x + 2, y + 2, (w - 4) * f, h - 4);
@@ -150,20 +172,25 @@ class UIScene extends Phaser.Scene {
   // ---------------------------------------------------------- escolha de melhoria
   describe(c) {
     const p = this.G.player;
+    if (c.type === 'evolution') {
+      const r = PROGRESSION_RECIPES.find(r => r.id === c.id);
+      return { icon: r.icon, name: r.name, tag: r.kind === 'union' ? 'UNIÃO DE ARMAS' : r.kind === 'dash' ? 'DASH EVOLUÍDO' : 'ARMA EVOLUÍDA', desc: r.desc + (r.kind === 'union' ? ' Libera um espaço de arma.' : ''), col: 0xd2a6ff };
+    }
+    if (c.type === 'dash') return { icon: 'dash', name: 'Esquiva Ágil', tag: 'DASH  Nv ' + p.dashLevel + ' → ' + (p.dashLevel + 1), desc: 'Reduz a recarga e melhora o dash. No nível 3, pode evoluir com Passos Leves e um baú.', col: 0x8db6ee };
     if (c.type === 'new') { const d = POWERS[c.id]; return { icon: d.icon, name: d.name, tag: 'NOVO PODER', desc: d.desc, col: 0xe0b040 }; }
     if (c.type === 'upgrade') { const w = p.hasPower(c.id); return { icon: w.def.icon, name: w.def.name, tag: 'MELHORIA  Nv ' + w.level + ' → ' + (w.level + 1), desc: w.nextText(), col: 0x5ab0ff }; }
     if (c.type === 'passive') { const d = PASSIVES.find((q) => q.id === c.id), l = p.passives[c.id] || 0; return { icon: d.icon, name: d.name, tag: 'ATRIBUTO  Nv ' + l + ' → ' + (l + 1), desc: d.desc, col: 0x5adf7a }; }
     return { icon: 'heal', name: 'Banquete Sombrio', tag: 'RECUPERAÇÃO', desc: 'Restaura 40% da vida máxima.', col: 0xe05a7a };
   }
 
-  showLevelUp(level, choices, cb) {
+  showLevelUp(level, choices, cb, context = {}) {
     const W = CONFIG.width, H = CONFIG.height, O = this.lvlObjs;
     this.lvlActive = true; this.lvlChoices = choices; this.lvlCb = cb; this.lvlOpenAt = this.time.now;
     O.push(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.74).setDepth(100));
-    const title = mkText(this, W / 2, 84, 'NÍVEL ' + level + '!', 58, '#ffe070', { strokeThickness: 8 }).setOrigin(0.5).setDepth(101);
+    const title = mkText(this, W / 2, 84, context.chest ? 'TESOURO DA MURALHA' : 'NÍVEL ' + level + '!', 58, '#ffe070', { strokeThickness: 8 }).setOrigin(0.5).setDepth(101);
     title.setShadow(0, 0, '#c8a640', 18, true, true);
     O.push(title);
-    O.push(mkText(this, W / 2, 138, 'Escolha uma melhoria', 22, '#cfc8d8').setOrigin(0.5).setDepth(101));
+    O.push(mkText(this, W / 2, 138, context.chest ? 'Escolha sua recompensa' : 'Escolha uma melhoria', 22, '#cfc8d8').setOrigin(0.5).setDepth(101));
 
     const n = choices.length, CW = 330, CH = 410, gap = 36;
     choices.forEach((c, i) => {
@@ -189,7 +216,7 @@ class UIScene extends Phaser.Scene {
   }
 
   choose(i) {
-    if (!this.lvlActive || this.time.now - this.lvlOpenAt < 350) return;   // evita clique acidental
+    if (GamePortal.dialogOpen || !this.lvlActive || this.time.now - this.lvlOpenAt < 350) return;   // evita clique acidental
     const c = this.lvlChoices[i];
     if (!c) return;
     this.lvlActive = false;
@@ -203,7 +230,7 @@ class UIScene extends Phaser.Scene {
   // ---------------------------------------------------------- pausa
   togglePause() {
     const G = this.G;
-    if (G.ended || this.lvlActive || !G.player) return;
+    if (GamePortal.dialogOpen || G.ended || this.lvlActive || !G.player) return;
     const W = CONFIG.width, H = CONFIG.height, O = this.pauseObjs;
     if (!this.paused) {
       this.paused = true;

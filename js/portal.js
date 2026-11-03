@@ -4,7 +4,7 @@
   const localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   const apiOrigin = localHost && location.port === '5500'
     ? `${location.protocol}//${location.hostname}:5501` : location.origin;
-  const defaults = { healthDropChance: 0.05, bossTime: 540, spawnBaseRate: 1.1, spawnGrowth: 0.0115, maxEnemies: 240 };
+  const defaults = { healthDropChance: 0.05, bossTime: 900, spawnBaseRate: 1.1, spawnGrowth: 0.0115, maxEnemies: 240 };
   const dialogs = [];
   let root, toolbar, identity, connection, notices;
   let offered = false, online = true, initialized = false, sessionPending = null;
@@ -344,13 +344,24 @@
     const results = element('div', 'portal-ranking-results');
     results.setAttribute('aria-live', 'polite');
     const tabs = [];
+    const filter = element('label', 'portal-field', 'Dificuldade');
+    const difficulty = document.createElement('select');
+    difficulty.setAttribute('aria-label', 'Dificuldade do ranking');
+    for (const d of Object.values(DIFFICULTIES)) {
+      const option = element('option', '', d.name); option.value = d.id; difficulty.append(option);
+    }
+    difficulty.value = scene('Game')?.difficultyId || game()?.registry.get('difficulty') || 'medium';
+    filter.append(difficulty);
+    let selectedSort = 'points';
     let serial = 0;
+    difficulty.addEventListener('change', () => load(selectedSort));
     const load = async (sort) => {
+      selectedSort = sort;
       const current = ++serial;
       for (const [key, tab] of tabs) tab.setAttribute('aria-pressed', String(key === sort));
       results.replaceChildren(element('p', 'portal-muted', 'Carregando ranking…'));
       try {
-        const data = await request(`/api/leaderboard?sort=${sort}`);
+        const data = await request(`/api/leaderboard?sort=${sort}&difficulty=${encodeURIComponent(difficulty.value)}`);
         if (serial !== current || !dialog.panel.isConnected) return;
         results.replaceChildren();
         if (!Array.isArray(data.entries) || !data.entries.length) { results.append(element('p', 'portal-empty', 'A muralha ainda espera seus primeiros recordistas.')); return; }
@@ -381,7 +392,7 @@
     for (const [key, label] of [['points', 'Pontos'], ['kills', 'Abates'], ['damage', 'Dano']]) {
       const tab = button(label, () => load(key)); tabs.push([key, tab]); switches.append(tab);
     }
-    dialog.body.append(switches, results);
+    dialog.body.append(filter, switches, results);
     dialog.footer.append(button('Fechar', dialog.close));
     load('points');
     return dialog;
@@ -396,6 +407,12 @@
   function handleKeyboard(event) {
     const top = dialogs[dialogs.length - 1];
     if (!top) {
+      if (event.type === 'keydown' && event.key.toLowerCase() === 'g' && !active('Intro')) {
+        const tag = document.activeElement?.tagName;
+        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && window.PowerGuide) {
+          event.preventDefault(); event.stopImmediatePropagation(); window.PowerGuide.open(); return;
+        }
+      }
       if (event.type === 'keydown' && event.key === 'F2' && portal.isAdmin) { event.preventDefault(); event.stopImmediatePropagation(); openAdmin(); }
       return;
     }
@@ -420,7 +437,7 @@
     toolbar.setAttribute('aria-label', 'Conta e ranking');
     identity = element('div', 'portal-toolbar-actions');
     connection = element('span', 'portal-connection');
-    toolbar.append(connection, identity, button('Ranking', openLeaderboard));
+    toolbar.append(connection, identity, button('Ranking', openLeaderboard), button('Grimório · G', () => window.PowerGuide?.open()));
     notices = element('div', 'portal-notices');
     notices.setAttribute('role', 'status');
     notices.setAttribute('aria-live', 'polite');
@@ -442,6 +459,7 @@
     user: null,
     csrf: null,
     settings: { ...defaults },
+    get dialogOpen() { return dialogs.length > 0; },
     get isAdmin() { return this.user?.role === 'admin'; },
     request,
     openDialog,
@@ -460,14 +478,14 @@
       offered = true;
       return this.ready.then(() => { if (!this.user) return this.openLogin(); });
     },
-    async beginRun(hero, practice = false) {
+    async beginRun(hero, practice = false, difficulty = 'medium') {
       await this.ready;
       if (!this.user) {
         // Convidados também recebem as regras atuais ao começar outra partida.
         if (online) { try { await refreshSession(); } catch (_) { /* Offline continua jogável. */ } }
-        if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings } };
+        if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings }, difficulty };
       }
-      try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice } }); }
+      try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice, difficulty } }); }
       catch (error) { this.notice(error.message); return { run_id: null, ranked: false }; }
     },
     async finishRun(payload) {

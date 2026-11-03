@@ -42,7 +42,7 @@ class BootScene extends Phaser.Scene {
       if (started) return;
       started = true;
       await GamePortal.ready;
-      if (q.has('char') && CHARACTERS[q.get('char')]) { this.scene.start('Game', { char: q.get('char') }); return; }  // atalho para testes
+      if (q.has('char') && CHARACTERS[q.get('char')]) { this.scene.start('Game', { char: q.get('char'), difficulty: q.get('difficulty') || 'medium' }); return; }  // atalho para testes
       this.scene.start('Menu');
       if (q.has('nointro')) GamePortal.offerLogin();
       if (!q.has('nointro')) this.scene.launch('Intro');   // abertura por cima do menu (?nointro pula)
@@ -87,8 +87,8 @@ class MenuScene extends Phaser.Scene {
 
     this.btn = mkButton(this, W / 2, 392, 300, 72, 'JOGAR', () => this.go(), { size: 34, depth: 10 });
     mkText(this, W / 2, 458, 'ENTER ou ESPAÇO', 16, '#9a8fb0').setOrigin(0.5).setDepth(10);
-    mkText(this, W / 2, 668, 'WASD / SETAS: mover   •   ataques são automáticos   •   P: pausar   •   M: som', 17, '#a89cc0').setOrigin(0.5).setDepth(10);
-    mkText(this, W / 2, 696, 'Fase 1 — Castelo do Cavaleiro Sombrio', 15, '#7a6f90').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 668, 'WASD / SETAS: mover  •  SHIFT / ESPAÇO: dash  •  P: pausa  •  G: grimório', 17, '#a89cc0').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 696, '15 minutos • 2 minibosses • evoluções e uniões • 4 dificuldades', 15, '#7a6f90').setOrigin(0.5).setDepth(10);
 
     this.input.keyboard.on('keydown-ENTER', () => this.go());
     this.input.keyboard.on('keydown-SPACE', () => this.go());
@@ -187,7 +187,7 @@ class SelectScene extends Phaser.Scene {
     this.registry.set('lastChar', id);
     Sfx.play('ui');
     this.cameras.main.fadeOut(300);
-    this.cameras.main.once('camerafadeoutcomplete', async () => { await GamePortal.ready; this.scene.start('Game', { char: id }); });
+    this.cameras.main.once('camerafadeoutcomplete', async () => { await GamePortal.ready; this.scene.start('Difficulty', { char: id }); });
   }
   back() {
     if (this.going) return;
@@ -205,6 +205,7 @@ class EndScene extends Phaser.Scene {
     const col = win ? '#ffe070' : '#ff5a5a';
     this.add.rectangle(W / 2, H / 2, W, H, win ? 0x0a0614 : 0x120306, 0.82);
     this.add.rectangle(W / 2, H / 2 - 10, 680, 580, 0x15111d, 0.97).setStrokeStyle(4, win ? 0xc8a640 : 0x8a2a2a);
+    mkText(this, W / 2, 82, resolveDifficulty(d.difficulty).name.toUpperCase(), 18, '#d9b77b').setOrigin(0.5);
     const title = mkText(this, W / 2, 130, win ? 'VITÓRIA!' : 'VOCÊ CAIU', 62, col, { strokeThickness: 8 }).setOrigin(0.5);
     title.setShadow(0, 0, win ? '#c8a640' : '#c01818', 20, true, true);
     this.tweens.add({ targets: title, scaleX: 1.04, scaleY: 1.04, yoyo: true, repeat: -1, duration: 1100, ease: 'Sine.easeInOut' });
@@ -243,7 +244,7 @@ class EndScene extends Phaser.Scene {
   again() {
     if (this.done) return; this.done = true;
     this.game.scene.stop('UI');
-    this.scene.start('Game', { char: this.d.char });   // reinício limpo: a cena é recriada do zero
+    this.scene.start('Game', { char: this.d.char, difficulty: this.d.difficulty });   // reinício limpo: a cena é recriada do zero
   }
   menu() {
     if (this.done) return; this.done = true;

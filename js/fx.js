@@ -35,6 +35,11 @@ class FX {
       this.corpses.push(s);
     }
 
+    // Dash pools: fixed budgets, independent of casts/frame rate.
+    this.dashTrails = Array.from({ length: 12 }, () => scene.add.image(0, 0, 'fx_dash_trail').setVisible(false));
+    this.dashPuffs = Array.from({ length: 24 }, () => scene.add.image(0, 0, 'fx_dash_smoke').setVisible(false));
+    for (const s of [...this.dashTrails, ...this.dashPuffs]) s.dashLife = 0;
+
     // Emissores de partículas
     const mk = (tint, speed, life, scale, add) => scene.add.particles(0, 0, 'px', {
       speed: { min: speed * 0.3, max: speed }, lifespan: life, scale: { start: scale, end: 0 },
@@ -48,6 +53,35 @@ class FX {
       gold: mk([0xffe070, 0xffffff], 160, 500, 2, true),
       blood: mk([0xa01818, 0xff2a2a, 0x4a0a10], 220, 600, 2.6, false),
     };
+  }
+
+  dashTrail(player, smoke) {
+    const s = this.dashTrails.find(s => s.dashLife <= 0);
+    if (!s) return;
+    s.dashLife = s.dashDur = smoke ? 0.30 : 0.18;
+    s.dashSmoke = smoke;
+    s.setTexture(player.sprite.texture.key, player.sprite.frame.name)
+      .setPosition(player.x, player.y).setFlipX(player.sprite.flipX)
+      .setDepth(player.y + 18).setTint(smoke ? 0xb4a5de : player.def.color)
+      .setScale(1).setAlpha(smoke ? 0.35 : 0.48).setVisible(true);
+  }
+
+  dashPuff(x, y, smoke, color) {
+    const count = smoke ? 8 : 4;
+    for (let i = 0; i < count; i++) {
+      const s = this.dashPuffs.find(s => s.dashLife <= 0);
+      if (!s) break;
+      const a = i / count * Math.PI * 2;
+      s.dashLife = s.dashDur = smoke ? 0.42 : 0.24;
+      s.dashSmoke = smoke; s.dashAngle = a;
+      s.dashVX = Math.cos(a) * (smoke ? 38 : 60);
+      s.dashVY = Math.sin(a) * 28 - 12;
+      s.setTexture(smoke ? 'fx_dash_smoke' : 'fx_dash_trail')
+        .setPosition(x + Math.cos(a) * 7, y + 8 + Math.sin(a) * 5)
+        .setDepth(y + 21).setTint(smoke ? (i % 2 ? 0xb4a5de : 0x74758e) : color)
+        .setRotation(smoke ? 0 : a).setScale(smoke ? 0.65 : 0.7).setAlpha(0.7).setVisible(true);
+    }
+    this.ring(x, y + 10, 5, smoke ? 30 : 22, 0.2, smoke ? 0xc7b5ec : color, 2);
   }
 
   burst(kind, x, y, n) { this.em[kind].explode(n, x, y); }
@@ -113,6 +147,21 @@ class FX {
   }
 
   update(dt) {
+    for (const s of this.dashTrails) {
+      if (s.dashLife <= 0) continue;
+      s.dashLife -= dt;
+      const p = Math.max(0, s.dashLife / s.dashDur);
+      s.setAlpha(p * (s.dashSmoke ? 0.35 : 0.48));
+      if (!p) s.setVisible(false);
+    }
+    for (const s of this.dashPuffs) {
+      if (s.dashLife <= 0) continue;
+      s.dashLife -= dt;
+      const p = Math.max(0, s.dashLife / s.dashDur);
+      s.x += s.dashVX * dt; s.y += s.dashVY * dt;
+      s.setAlpha(p * 0.7).setScale(s.dashSmoke ? 0.65 + (1 - p) * 0.8 : 0.7 + (1 - p) * 0.3);
+      if (!p) s.setVisible(false);
+    }
     // Anéis, raios
     const g = this.gTop; g.clear();
     for (let i = this.list.length - 1; i >= 0; i--) {
@@ -188,5 +237,6 @@ class FX {
   // Limpa tudo (reinício)
   destroy() {
     this.list.length = 0; this.ground.length = 0;
+    for (const s of [...this.dashTrails, ...this.dashPuffs]) { s.dashLife = 0; s.setVisible(false); }
   }
 }

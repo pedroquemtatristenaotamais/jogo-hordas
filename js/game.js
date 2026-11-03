@@ -6,7 +6,11 @@
 class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
-  init(data) { this.charId = (data && data.char && CHARACTERS[data.char]) ? data.char : 'vanguard'; }
+  init(data = {}) {
+    this.charId = CHARACTERS[data.char] ? data.char : 'vanguard';
+    this.difficultyId = resolveDifficulty(data.difficulty || this.registry.get('difficulty') || 'medium').id;
+    this.difficulty = resolveDifficulty(this.difficultyId);
+  }
 
   async create() {
     this.gameReady = false;
@@ -16,10 +20,12 @@ class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => { if (this.initialization === initialization) this.initialization = null; });
     const q = new URLSearchParams(location.search);
     const practice = GamePortal.isAdmin || ['god', 't', 'boss'].some(key => q.has(key));
-    const run = await GamePortal.beginRun(this.charId, practice).catch(error => ({ error: error.message }));
+    const run = await GamePortal.beginRun(this.charId, practice, this.difficultyId).catch(error => ({ error: error.message }));
     if (this.initialization !== initialization) return;
     this.runStart = Promise.resolve(run);
     this.isPractice = practice || !!run?.run_id && !run.ranked;
+    this.difficultyId = resolveDifficulty(run?.difficulty || this.difficultyId).id;
+    this.difficulty = resolveDifficulty(this.difficultyId);
     this.buildScene(run?.settings || GamePortal.settings || {});
     this.gameReady = true;
   }
@@ -46,6 +52,7 @@ class GameScene extends Phaser.Scene {
     this.runSubmission = null;
     this.ended = false;
     this.levelUpOpen = false;
+    this.chestOpen = false;
     this.pendingLevels = 0;
     this.lastOffer = [];
     this.spawningEnabled = true;
@@ -53,6 +60,7 @@ class GameScene extends Phaser.Scene {
     this.boss = null;
     this.hazards = [];
     this.botInput = null;
+    this.requestDash = false;
     this.tmpA = []; this.tmpB = []; this.tmpC = []; this.tmpE = [];
 
     this.cameras.main.setBackgroundColor('#07060a');
@@ -68,6 +76,8 @@ class GameScene extends Phaser.Scene {
     this.enemyShots = new EnemyShots(this);
     this.gems = new Gems(this);
     this.enemies = new EnemyManager(this);
+    this.progression = new ProgressionSystem(this);
+    this.encounters = new EncounterDirector(this);
 
     // Câmera
     const cam = this.cameras.main;
@@ -84,21 +94,24 @@ class GameScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(9400);
 
     // Controles
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,SPACE');
     this.joy = { active: false, ox: 0, oy: 0, x: 0, y: 0 };
     this.joyG = this.add.graphics().setScrollFactor(0).setDepth(99999);
-    this.input.on('pointerdown', (p) => { if (p.wasTouch) { this.joy.active = true; this.joy.ox = p.x; this.joy.oy = p.y; this.joy.x = 0; this.joy.y = 0; } });
+    this.input.on('pointerdown', (p) => {
+      if (!p.wasTouch || p.x > CONFIG.width - 145 && p.y > CONFIG.height - 240) return;
+      this.joy.active = true; this.joy.id = p.id; this.joy.ox = p.x; this.joy.oy = p.y; this.joy.x = 0; this.joy.y = 0;
+    });
     this.input.on('pointermove', (p) => {
-      if (!this.joy.active || !p.isDown) return;
+      if (!this.joy.active || this.joy.id !== p.id || !p.isDown) return;
       const dx = p.x - this.joy.ox, dy = p.y - this.joy.oy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / 60);
       this.joy.x = dx / d * k; this.joy.y = dy / d * k;
     });
-    this.input.on('pointerup', () => { this.joy.active = false; this.joy.x = 0; this.joy.y = 0; });
+    this.input.on('pointerup', p => { if (this.joy.id !== p.id) return; this.joy.active = false; this.joy.x = 0; this.joy.y = 0; });
 
     this.scene.launch('UI', { game: this });
     this.events.once('shutdown', () => { this.game.scene.stop('UI'); });
 
-    this.time.delayedCall(900, () => this.announce('Sobreviva… o Cavaleiro Sombrio desperta em ' + Math.round(this.bossTime / 60 * 10) / 10 + ' min', 0xd8c8a0));
+    this.time.delayedCall(900, () => this.announce(this.difficulty.name + ' • minibosses aos 5 e 10 min • chefe aos ' + Math.round(this.bossTime / 60 * 10) / 10 + ' min', this.difficulty.color));
   }
 
   // ---------------------------------------------------------- utilidades usadas por poderes/inimigos
@@ -192,8 +205,9 @@ class GameScene extends Phaser.Scene {
     const p = this.player, pool = [];
     for (const pw of p.powers) if (!pw.maxed) pool.push({ key: 'u:' + pw.def.id, type: 'upgrade', id: pw.def.id, w: 2.2 });
     if (p.powers.length < CONFIG.maxPowers) {
-      for (const id in POWERS) if (!p.hasPower(id)) pool.push({ key: 'n:' + id, type: 'new', id, w: p.powers.length < 4 ? 3 : 1.6 });
+      for (const id in POWERS) if (POWERS[id].obtainable !== false && !p.hasPower(id) && this.progression.canOfferPower(id)) pool.push({ key: 'n:' + id, type: 'new', id, w: p.powers.length < 4 ? 3 : 1.6 });
     }
+    if (p.dashLevel < 3) pool.push({ key: 'dash', type: 'dash', w: 1.8 });
     for (const ps of PASSIVES) if ((p.passives[ps.id] || 0) < CONFIG.maxPassiveLevel) pool.push({ key: 'p:' + ps.id, type: 'passive', id: ps.id, w: 1.4 });
     // o que foi oferecido e ignorado no nível anterior aparece menos
     for (const c of pool) if (this.lastOffer.indexOf(c.key) >= 0) c.w *= 0.45;
@@ -216,7 +230,7 @@ class GameScene extends Phaser.Scene {
   }
 
   openLevelUp() {
-    if (this.levelUpOpen) return;
+    if (this.levelUpOpen || this.chestOpen || this.ended) return;
     const ui = this.scene.get('UI');
     if (!ui || !ui.ready) return;
     this.pendingLevels--;
@@ -227,14 +241,32 @@ class GameScene extends Phaser.Scene {
     ui.showLevelUp(this.player.level - this.pendingLevels, choices, (c) => {
       this.applyChoice(c);
       this.levelUpOpen = false;
-      this.scene.resume();
+      if (!GamePortal.dialogOpen) this.scene.resume();
     });
+  }
+
+  openEvolutionChest(chest) {
+    const ui = this.scene.get('UI');
+    if (this.ended || this.levelUpOpen || this.chestOpen || !ui?.ready) return false;
+    const offers = this.progression.getOffers(chest.canEvolve !== false);
+    if (!offers.length) return false;
+    this.chestOpen = true;
+    this.scene.pause();
+    Sfx.play('levelup');
+    ui.showLevelUp(this.player.level, offers, choice => {
+      this.applyChoice(choice);
+      this.chestOpen = false;
+      if (!GamePortal.dialogOpen) this.scene.resume();
+    }, { chest: true });
+    return true;
   }
 
   applyChoice(c) {
     const p = this.player;
     if (c.type === 'upgrade' || c.type === 'new') p.addPower(c.id);
     else if (c.type === 'passive') p.addPassive(c.id);
+    else if (c.type === 'dash') p.upgradeDash();
+    else if (c.type === 'evolution') this.progression.applyRecipe(c.id);
     else if (c.type === 'heal') p.heal(p.maxHp * 0.4);
     this.fx.ring(p.x, p.y, 10, 130, 0.5, 0xffe070, 4, 0.15);
     this.fx.burst('gold', p.x, p.y, 16);
@@ -242,6 +274,7 @@ class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------- chefe
   startBossFight() {
+    if (this.bossStarted || this.ended) return;
     this.bossStarted = true;
     this.spawningEnabled = false;
     const A = CONFIG.arena;
@@ -282,7 +315,8 @@ class GameScene extends Phaser.Scene {
   }
 
   get points() {
-    return this.totalKills * 100 + Math.floor(this.totalDamage) * 2 + Math.floor(this.t) * 10 + (this.boss && !this.boss.alive ? 5000 : 0);
+    const base = this.totalKills * 100 + Math.floor(this.totalDamage) * 2 + Math.floor(this.t) * 10 + (this.boss && !this.boss.alive ? 5000 : 0);
+    return Math.floor(base * this.difficulty.scoreMul);
   }
 
   submitResult(win) {
@@ -299,7 +333,7 @@ class GameScene extends Phaser.Scene {
   showEnd(win) {
     const submission = this.submitResult(win);
     this.scene.launch('End', {
-      win, time: this.t, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId,
+      win, time: this.t, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId, difficulty: this.difficultyId,
       powers: this.player.powers.map((w) => ({ icon: w.def.icon, name: w.def.name, level: w.level })),
     });
     this.scene.pause();
@@ -315,7 +349,9 @@ class GameScene extends Phaser.Scene {
     if (K.W.isDown || K.UP.isDown) y -= 1;
     if (K.S.isDown || K.DOWN.isDown) y += 1;
     if (this.joy.active) { x += this.joy.x; y += this.joy.y; }
-    return { x, y };
+    const dash = Phaser.Input.Keyboard.JustDown(K.SHIFT) || Phaser.Input.Keyboard.JustDown(K.SPACE) || this.requestDash;
+    this.requestDash = false;
+    return { x, y, dash };
   }
 
   // ---------------------------------------------------------- loop principal
@@ -333,6 +369,7 @@ class GameScene extends Phaser.Scene {
 
     this.player.update(dt, this.readInput(), this.world);
     this.enemies.update(dt);
+    this.encounters.update(dt);
     if (this.boss) this.boss.update(dt);
     this.pShots.update(dt);
     this.enemyShots.update(dt);
@@ -342,6 +379,7 @@ class GameScene extends Phaser.Scene {
     this.world.update(dt, this.t);
 
     if (!this.bossStarted && this.t >= this.bossTime) this.startBossFight();
+    this.progression.update(dt);
     if (this.pendingLevels > 0 && !this.player.dead && !this.ended) this.openLevelUp();
   }
 

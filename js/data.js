@@ -171,6 +171,39 @@ const POWERS = {
   },
 };
 
+// Armas adicionais: oito níveis completos.
+for (const [id, name, desc, base] of [
+  ['axes', 'Machados do Crepúsculo', 'Machados descrevem arcos e retornam, cortando na ida e na volta.', { damage: 20, cooldown: 1.8, count: 2, range: 280, radius: 22 }],
+  ['frost', 'Estilhaços de Gelo', 'Uma onda congela o avanço dos inimigos com lentidão.', { damage: 14, cooldown: 2.1, range: 260, radius: 95 }],
+  ['poison', 'Jardim Venenoso', 'Deixa poças persistentes sob os inimigos mais próximos.', { damage: 9, cooldown: 2.8, range: 360, radius: 65, duration: 3.8 }],
+]) {
+  POWERS[id] = { id, name, desc, icon: id, base, upgrades: [
+    { text: '+6 de dano', apply: s => { s.damage += 6; } },
+    { text: '+20% de área', apply: s => { s.radius *= 1.2; } },
+    { text: 'Ataca 15% mais rápido', apply: s => { s.cooldown *= 0.85; } },
+    { text: '+70 de alcance', apply: s => { s.range += 70; } },
+    { text: '+9 de dano', apply: s => { s.damage += 9; } },
+    { text: '+25% de área', apply: s => { s.radius *= 1.25; } },
+    { text: 'Maestria: +30% de dano e frequência', apply: s => { s.damage *= 1.3; s.cooldown *= 0.7; if (s.count) s.count++; if (s.duration) s.duration += 2; } },
+  ] };
+}
+for (const [id, name, desc, base] of [
+  ['soulblade', 'Lâmina das Almas', 'Cortes sucessivos roubam vida dos inimigos atingidos.', { damage: 72, cooldown: 1.1, range: 185 }],
+  ['tempest', 'Tempestade Eterna', 'Raios orbitam o jogador e castigam uma ampla região.', { damage: 58, cooldown: 0.65, range: 470, radius: 85 }],
+  ['inferno', 'Inferno Vivo', 'Erupções deixam brasas persistentes no chão.', { damage: 42, cooldown: 1.5, range: 520, radius: 115, duration: 4 }],
+  ['reaper_axes', 'Machados Ceifadores', 'Quatro foices retornam em espiral e executam feridos.', { damage: 85, cooldown: 1.5, count: 4, range: 390, radius: 38 }],
+  ['blizzard', 'Nevasca', 'Uma frente glacial persistente persegue o jogador.', { damage: 28, cooldown: 0.55, range: 330, radius: 220 }],
+  ['miasma', 'Miasma Imortal', 'Nuvens venenosas se espalham de vítimas mortas.', { damage: 32, cooldown: 1.8, range: 430, radius: 100, duration: 6 }],
+  ['celestial_ring', 'Anel Celestial', 'Duas coroas oscilantes de estrelas protegem o jogador.', { damage: 42, count: 8, radius: 155, speed: 2.7, hitCd: 0.22 }],
+  ['singularity', 'Singularidade', 'Um vórtice atrai hordas antes de implodir.', { damage: 100, cooldown: 3.8, range: 470, radius: 180, duration: 2.6 }],
+]) POWERS[id] = { id, name, desc, icon: id, base, upgrades: [], obtainable: false };
+
+const PROGRESSION_RECIPES = [
+  ...[['slash','maxHp','soulblade'], ['lightning','rate','tempest'], ['fireball','damage','inferno'], ['axes','area','reaper_axes'], ['frost','range','blizzard'], ['poison','maxHp','miasma']].map(([ingredient, passive, result]) => ({ id: result, kind: 'evolution', ingredients: [ingredient], passive, result, name: POWERS[result].name, desc: POWERS[result].desc, icon: result })),
+  ...[['blades','orbs','celestial_ring'], ['arcane','burst','singularity']].map(([a,b,result]) => ({ id: result, kind: 'union', ingredients: [a,b], result, name: POWERS[result].name, desc: POWERS[result].desc, icon: result })),
+  { id: 'smoke_dash', kind: 'dash', name: 'Passo de Fumaça', desc: 'Esquiva máxima + Passos Leves: deixa fumaça ao esquivar.', icon: 'smoke_dash', ingredients: [], passive: 'speed' },
+];
+
 // ---------- Projéteis inimigos ----------
 const ENEMY_SHOTS = {
   arrow: { tex: 'sh_arrow', speed: 270, dmg: 6,  radius: 6,  life: 2.6, rot: true },

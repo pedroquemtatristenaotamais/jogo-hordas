@@ -686,6 +686,8 @@ function drawMenuVillager(P, f, id) {
 
 // ---------------- Geração de tudo + animações ----------------
 SPR.generateAll = function (scene) {
+  drawProgressionAssets(scene);
+  drawDashAssets(scene);
   drawRefinedProjectiles(scene);
   drawProjectiles(scene);
   drawIcons(scene);

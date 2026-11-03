@@ -12,7 +12,8 @@ class Boss {
     this.isBoss = true;
     this.uid = ENEMY_UID++;
     this.x = x; this.y = y; this.radius = D.radius;
-    this.maxHp = D.hp; this.hp = D.hp;
+    this.maxHp = Math.round(D.hp * scene.difficulty.bossHpMul); this.hp = this.maxHp;
+    this.damageMul = scene.difficulty.bossDmgMul;
     this.alive = true;
     this.hitT = {};
     this.noObs = true;
@@ -81,7 +82,7 @@ class Boss {
     const sc = this.scene, p = sc.player, D = BOSS.slash;
     this.setPose(3); this.go('slash_hit', 0.3);
     const dx = p.x - this.x, dy = p.y - this.y, dist = Math.hypot(dx, dy);
-    if (!p.dead && dist <= D.reach + p.radius && Math.abs(angleDiff(Math.atan2(dy, dx), this.ang)) <= D.half) p.takeDamage(D.dmg);
+    if (!p.dead && dist <= D.reach + p.radius && Math.abs(angleDiff(Math.atan2(dy, dx), this.ang)) <= D.half) p.takeDamage(D.dmg * this.damageMul);
     const tx = this.x + Math.cos(this.ang) * D.reach * 0.7, ty = this.y + Math.sin(this.ang) * D.reach * 0.7;
     sc.fx.ring(tx, ty, 20, D.reach * 0.6, 0.25, 0xff4a4a, 5, 0.25);
     sc.fx.burst('dark', tx, ty, 14);
@@ -110,7 +111,7 @@ class Boss {
       for (let i = 0; i < n; i++) {
         const a = base + (i - (n - 1) / 2) * D.spread + extra;
         const s = sc.enemyShots.fire('dark', this.x + Math.cos(a) * 50, this.y - 6 + Math.sin(a) * 40, a, 1,
-          { tex: 'sh_wave', speed: D.speed, dmg: D.dmg, radius: 22, life: 3.6, rot: true, scale: 1 });
+          { tex: 'sh_wave', speed: D.speed, dmg: D.dmg * this.damageMul, radius: 22, life: 3.6, rot: true, scale: 1 });
         if (s) s.rotation = a + Math.PI; // a borda brilhante da onda aponta para a frente
       }
     };
@@ -134,7 +135,7 @@ class Boss {
       if (i > 0) { const a = Math.random() * 6.283, r = rand(80, 300); x += Math.cos(a) * r; y += Math.sin(a) * r; }
       const d = Math.hypot(x - A.x, y - A.y), lim = A.r - 40;
       if (d > lim) { x = A.x + (x - A.x) / d * lim; y = A.y + (y - A.y) / d * lim; }
-      sc.addHazard({ shape: 'circle', x, y, r: D.radius, delay: 0.85 + i * 0.17, dmg: D.dmg, col: 0xb040ff, kind: 'dark' });
+      sc.addHazard({ shape: 'circle', x, y, r: D.radius, delay: 0.85 + i * 0.17, dmg: D.dmg * this.damageMul, col: 0xb040ff, kind: 'dark' });
     }
     sc.fx.ring(this.x, this.y, 10, 120, 0.6, 0xb040ff, 4, 0.2);
     Sfx.play('warn');
@@ -236,7 +237,7 @@ class Boss {
         this.trailT -= dt;
         if (this.trailT <= 0) { this.trailT = 0.04; sc.fx.burst('dark', this.x, this.y + 24, 3); }
         if (!this.hitDone && !p.dead && dist < this.radius + p.radius + 4) {
-          if (p.takeDamage(D.charge.dmg)) { this.hitDone = true; sc.fx.burst('blood', p.x, p.y, 10); }
+          if (p.takeDamage(D.charge.dmg * this.damageMul)) { this.hitDone = true; sc.fx.burst('blood', p.x, p.y, 10); }
         }
         if (this.stateT <= 0) {
           this.dashes--;
@@ -270,7 +271,7 @@ class Boss {
 
     // dano de contato
     if ((this.state === 'chase' || this.state === 'rest') && !p.dead && dist < this.radius + p.radius && this.contactCd <= 0) {
-      if (p.takeDamage(D.contactDmg)) this.contactCd = 0.8;
+      if (p.takeDamage(D.contactDmg * this.damageMul)) this.contactCd = 0.8;
     }
 
     // visual

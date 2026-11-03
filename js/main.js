@@ -8,9 +8,10 @@ window.GAME = new Phaser.Game({
   height: CONFIG.height,
   backgroundColor: '#07060a',
   pixelArt: true,
+  input: { activePointers: 2 },
   roundPixels: true,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   fps: { target: 60 },
   disableContextMenu: true,
-  scene: [BootScene, MenuScene, SelectScene, GameScene, UIScene, EndScene, IntroScene],
+  scene: [BootScene, MenuScene, SelectScene, DifficultyScene, GameScene, UIScene, EndScene, IntroScene],
 });
