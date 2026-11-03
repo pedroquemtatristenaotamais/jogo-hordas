@@ -152,9 +152,19 @@ class RateLimiter:
 class GameApplication:
     def __init__(self, root, private_dir=None):
         self.root = Path(root).resolve()
-        self.private = Path(private_dir) if private_dir is not None else self.root / '.private'
-        if self.private.is_symlink():
+        configured = private_dir
+        if configured is None:
+            configured = os.environ.get('MURALHA_DATA_DIR') or (
+                Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'a-ultima-muralha')
+        configured = Path(configured).expanduser()
+        if configured.is_symlink():
             raise RuntimeError('A pasta privada não pode ser um link simbólico.')
+        self.private = configured.resolve()
+        if self.private == self.root or self.root in self.private.parents:
+            raise RuntimeError('Os dados privados devem ficar fora da pasta publicada do jogo.')
+        legacy_private = self.root / '.private'
+        if legacy_private.exists() or legacy_private.is_symlink():
+            raise RuntimeError('Existe uma pasta .private legada dentro do jogo. Pare o Live Server e mova os dados para fora da pasta publicada antes de iniciar.')
         self.private.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.private.chmod(0o700)
         self.db_path = self.private / 'jogo.sqlite3'
@@ -193,7 +203,7 @@ class GameApplication:
                     hero TEXT NOT NULL, practice INTEGER NOT NULL, ranked INTEGER NOT NULL,
                     started_at REAL NOT NULL, finished_at REAL,
                     state TEXT NOT NULL DEFAULT 'started' CHECK(state IN ('started','finished','abandoned')),
-                    settings_json TEXT NOT NULL,
+                    settings_json TEXT NOT NULL, session_hash TEXT,
                     kills INTEGER, damage REAL, duration REAL, level INTEGER,
                     victory INTEGER, points INTEGER
                 );
@@ -207,6 +217,12 @@ class GameApplication:
                     created_at REAL NOT NULL
                 );
             ''')
+            # Migra bancos locais criados antes da vinculação da partida à sessão.
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(runs)')}
+            if 'session_hash' not in columns:
+                db.execute('ALTER TABLE runs ADD COLUMN session_hash TEXT')
+            db.execute("UPDATE runs SET state='abandoned',ranked=0 WHERE state='started' AND session_hash IS NULL")
+            db.execute('CREATE INDEX IF NOT EXISTS run_session ON runs(session_hash,state)')
             db.execute('INSERT OR IGNORE INTO settings(id,value_json) VALUES(1,?)',
                        (json.dumps(DEFAULT_SETTINGS),))
             if not db.execute("SELECT id FROM users WHERE role='admin'").fetchone():
@@ -251,6 +267,7 @@ class GameApplication:
         now = time.time()
         db.execute('DELETE FROM sessions WHERE expires_at<=?', (now,))
         if previous:
+            self.invalidate_session_runs(db, previous['token_hash'])
             db.execute('DELETE FROM sessions WHERE token_hash=?', (previous['token_hash'],))
         # Limita sessões simultâneas, preservando as nove mais recentes.
         db.execute('''DELETE FROM sessions WHERE user_id=? AND token_hash NOT IN
@@ -262,6 +279,9 @@ class GameApplication:
         cookie = f'{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_SECONDS}'
         user = self.session(db, f'{COOKIE_NAME}={token}')
         return self.session_payload(db, user), cookie
+
+    def invalidate_session_runs(self, db, session_hash):
+        db.execute("UPDATE runs SET state='abandoned',ranked=0 WHERE session_hash=? AND state='started'", (session_hash,))
 
     def audit(self, db, actor, action, details, target=None):
         db.execute('INSERT INTO audit(actor_id,action,target_id,detail_json,created_at) VALUES(?,?,?,?,?)',
@@ -384,6 +404,7 @@ class GameApplication:
                         raise APIError(403, 'Apenas administradores podem usar esta função.')
                     if method == 'POST' and path == '/api/logout':
                         require_fields(body, ())
+                        self.invalidate_session_runs(db, user['token_hash'])
                         db.execute('DELETE FROM sessions WHERE token_hash=?', (user['token_hash'],))
                         cookie = f'{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
                         result = {'ok': True}
@@ -395,6 +416,8 @@ class GameApplication:
                         if not password_matches(current, user['password_hash']):
                             raise APIError(400, 'A senha atual está incorreta.')
                         db.execute('UPDATE users SET password_hash=? WHERE id=?', (password_hash(new), user['id']))
+                        db.execute("""UPDATE runs SET state='abandoned',ranked=0 WHERE state='started' AND session_hash IN
+                            (SELECT token_hash FROM sessions WHERE user_id=? AND token_hash<>?)""", (user['id'], user['token_hash']))
                         db.execute('DELETE FROM sessions WHERE user_id=? AND token_hash<>?', (user['id'], user['token_hash']))
                         self.audit(db, user, 'password', {}, user['id'])
                         result = {'ok': True}
@@ -409,9 +432,9 @@ class GameApplication:
                         ranked = user['role'] == 'player' and not practice and settings == DEFAULT_SETTINGS
                         run_id = secrets.token_urlsafe(24)
                         db.execute("UPDATE runs SET state='abandoned' WHERE user_id=? AND state='started'", (user['id'],))
-                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json)
-                            VALUES(?,?,?,?,?,?,?)''', (run_id, user['id'], hero, int(practice), int(ranked), time.time(), json.dumps(settings)))
-                        result = {'run_id': run_id, 'ranked': ranked}
+                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json,session_hash)
+                            VALUES(?,?,?,?,?,?,?,?)''', (run_id, user['id'], hero, int(practice), int(ranked), time.time(), json.dumps(settings), user['token_hash']))
+                        result = {'run_id': run_id, 'ranked': ranked, 'settings': settings}
                     elif method == 'POST' and path == '/api/runs/finish':
                         require_fields(body, ('run_id', 'kills', 'damage', 'duration', 'hero', 'level', 'victory'))
                         run_id = body['run_id']
@@ -422,6 +445,8 @@ class GameApplication:
                             raise APIError(404, 'Partida não encontrada.')
                         if run['state'] != 'started':
                             raise APIError(409, 'Esta partida já foi encerrada ou substituída.')
+                        if not run['session_hash'] or not hmac.compare_digest(run['session_hash'], user['token_hash']):
+                            raise APIError(409, 'Esta partida pertence a outra sessão. Inicie uma nova partida.')
                         if body['hero'] != run['hero']:
                             raise APIError(400, 'O personagem difere do início da partida.')
                         kills = number(body['kills'], 'kills', 0, 1_000_000, True)
@@ -467,6 +492,7 @@ class GameApplication:
                             raise APIError(400, 'Contas administrativas não podem ser banidas.')
                         db.execute('UPDATE users SET banned=? WHERE id=?', (int(banned), target_id))
                         if banned:
+                            db.execute("UPDATE runs SET state='abandoned',ranked=0 WHERE user_id=? AND state='started'", (target_id,))
                             db.execute('DELETE FROM sessions WHERE user_id=?', (target_id,))
                         self.audit(db, user, 'ban', {'banned': banned, 'reason': reason.strip()}, target_id)
                         result = {'ok': True}
@@ -706,7 +732,7 @@ def main():
         print(f'Não foi possível iniciar o servidor: {error}', file=sys.stderr)
         return 1
     print(f'Jogo: http://{args.host}:{server.server_port}/', flush=True)
-    print('Conta admin inicial: arquivo local .private/admin-inicial.json (abra em um editor; não compartilhe).', flush=True)
+    print(f'Conta admin inicial: {server.app.private / "admin-inicial.json"} (abra em um editor; não compartilhe).', flush=True)
     print('Para encerrar: Ctrl+C.', flush=True)
     try:
         server.serve_forever()

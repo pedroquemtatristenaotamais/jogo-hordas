@@ -72,6 +72,7 @@ const GameAdmin = window.GameAdmin = {
     };
     const select = (parent, label, values) => {
       const wrap = node('label', label, 'admin-field'), input = document.createElement('select');
+      input.setAttribute('aria-label', label);
       for (const [value, text] of values) { const option = node('option', text); option.value = value; input.append(option); }
       wrap.append(input); parent.append(wrap); return input;
     };

@@ -29,3 +29,14 @@ Parâmetros de teste na URL:
   &debug          mostra FPS e contagem de inimigos
   &t=200          começa aos 200 segundos de partida
   &char=vanguard | ranger | mage   pula a abertura e a seleção de personagem
+
+CONTAS, RANKING E ADMINISTRADOR
+- Inicie ./INICIAR-JOGO.sh e abra http://127.0.0.1:5501/.
+- Entrar é opcional. Cadastre um nome de 3 a 20 caracteres e uma senha.
+- O ranking registra pontos, abates e dano causado nas partidas normais.
+- A conta inicial é admin. Consulte a credencial inicial no arquivo privado:
+  ~/.local/share/a-ultima-muralha/admin-inicial.json
+- Entre como admin e pressione F2 ou use o botão ADMIN para abrir o painel.
+- Partidas de administrador ou com regras alteradas são treinos e não competem.
+- Dados e senhas ficam fora da pasta publicada e fora do Git.
+- Detalhes de execução, persistência e testes: docs/CONTAS-SERVIDOR.md.

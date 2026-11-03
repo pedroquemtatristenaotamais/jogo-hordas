@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -152,10 +153,93 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.finish(run['run_id'])[0], 404)
         self.request('/api/logout', {})
         self.request('/api/login', {'username':'PlayerOne', 'password':'SamplePass!2026'})
+        run = self.start()
         self.age(run['run_id'], 30)
         for bad in ({'damage':-1}, {'kills':True}, {'hero':'mage'}, {'level':101}, {'victory':1}, {'damage':float('nan')}, {'kills':2.5}):
             self.assertEqual(self.finish(run['run_id'], **bad)[0], 400, bad)
         self.assertEqual(self.finish(run['run_id'])[0], 200)
+
+    def test_logout_and_account_switch_cannot_restore_ranked_run_after_admin_cheats(self):
+        for logout_first in (False, True):
+            if not self.cookie:
+                self.register()
+            else:
+                self.request('/api/login', {'username':'PlayerOne','password':'SamplePass!2026'})
+            run = self.start()
+            self.assertTrue(run['ranked'])
+            self.age(run['run_id'],30)
+            if logout_first:
+                self.assertEqual(self.request('/api/logout',{})[0],200)
+            self.admin()
+            self.assertEqual(self.request('/api/admin/command',{'command':'god','args':{'enabled':True}})[0],200)
+            self.assertEqual(self.request('/api/login',{'username':'PlayerOne','password':'SamplePass!2026'})[0],200)
+            self.assertEqual(self.finish(run['run_id'])[0],409)
+            self.assertEqual(self.request('/api/leaderboard')[1]['entries'],[])
+
+    def test_run_finish_requires_original_session_even_for_same_account(self):
+        self.register()
+        original_cookie, original_csrf = self.cookie,self.csrf
+        run = self.start(); self.age(run['run_id'],30)
+        self.cookie=''; self.csrf=None
+        self.assertEqual(self.request('/api/login',{'username':'PlayerOne','password':'SamplePass!2026'})[0],200)
+        self.assertEqual(self.finish(run['run_id'])[0],409)
+        self.cookie,self.csrf=original_cookie,original_csrf
+        self.assertEqual(self.finish(run['run_id'])[0],200)
+
+    def test_registering_another_account_invalidates_previous_session_run(self):
+        self.register()
+        run=self.start(); self.age(run['run_id'],30)
+        self.register('PlayerTwo')
+        self.assertEqual(self.request('/api/login',{'username':'PlayerOne','password':'SamplePass!2026'})[0],200)
+        self.assertEqual(self.finish(run['run_id'])[0],409)
+        self.assertEqual(self.request('/api/leaderboard')[1]['entries'],[])
+
+    def test_legacy_runs_migrate_without_restoring_unbound_open_scores(self):
+        legacy=Path(self.tmp.name)/'legacy-data'
+        legacy.mkdir(mode=0o700)
+        with sqlite3.connect(legacy/'jogo.sqlite3') as db:
+            db.execute('''CREATE TABLE runs (
+                id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,hero TEXT NOT NULL,
+                practice INTEGER NOT NULL,ranked INTEGER NOT NULL,started_at REAL NOT NULL,
+                finished_at REAL,state TEXT NOT NULL DEFAULT 'started',settings_json TEXT NOT NULL,
+                kills INTEGER,damage REAL,duration REAL,level INTEGER,victory INTEGER,points INTEGER)''')
+            db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json)
+                VALUES(?,1,'vanguard',0,1,0,'{}')''',('x'*32,))
+            db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json,state,points)
+                VALUES(?,1,'vanguard',0,1,0,'{}','finished',1234)''',('y'*32,))
+        app=self.module.GameApplication(ROOT,legacy)
+        with app.connect() as db:
+            row=db.execute('SELECT state,ranked,session_hash FROM runs WHERE id=?',('x'*32,)).fetchone()
+            self.assertEqual(tuple(row),('abandoned',0,None))
+            self.assertEqual(db.execute('SELECT points FROM runs WHERE id=?',('y'*32,)).fetchone()[0],1234)
+
+    def test_run_start_returns_authoritative_settings_snapshot(self):
+        self.admin()
+        settings={'healthDropChance':.2,'bossTime':30,'spawnBaseRate':1,'spawnGrowth':.01,'maxEnemies':120}
+        self.assertEqual(self.request('/api/admin/settings',settings)[0],200)
+        self.assertEqual(self.request('/api/logout',{})[0],200)
+        self.register()
+        run=self.start()
+        self.assertEqual(run.get('settings'),settings)
+        self.assertFalse(run['ranked'])
+        with sqlite3.connect(self.private/'jogo.sqlite3') as db:
+            stored=json.loads(db.execute('SELECT settings_json FROM runs WHERE id=?',(run['run_id'],)).fetchone()[0])
+        self.assertEqual(stored,run['settings'])
+
+    def test_private_storage_is_outside_static_root_and_respects_environment(self):
+        static=Path(self.tmp.name)/'site'
+        static.mkdir()
+        for location in (static,static/'.private',static/'nested'/'secrets'):
+            with self.assertRaises(RuntimeError):
+                self.module.GameApplication(static,location)
+        self.assertFalse((static/'.private').exists())
+        with patch.dict(os.environ,{'MURALHA_DATA_DIR':'','XDG_DATA_HOME':str(Path(self.tmp.name)/'xdg')}):
+            app=self.module.GameApplication(static)
+            self.assertEqual(app.private,Path(self.tmp.name)/'xdg'/'a-ultima-muralha')
+        custom=Path(self.tmp.name)/'custom-data'
+        with patch.dict(os.environ,{'MURALHA_DATA_DIR':str(custom)}):
+            app=self.module.GameApplication(static)
+            self.assertEqual(app.private,custom)
 
     def test_leaderboard_best_per_user_sort_and_admin_exclusion(self):
         self.register()

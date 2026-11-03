@@ -219,7 +219,7 @@ class EndScene extends Phaser.Scene {
     const currentResult = Symbol('resultado'); this.currentResult = currentResult;
     Promise.resolve(d.submission).then(result => {
       if (!this.scene.isActive() || this.currentResult !== currentResult) return;
-      saveLabel.setText(result?.error ? result.error : result?.saved && result?.ranked ? 'Resultado salvo no ranking.' : d.practice ? 'Partida de treino: fora do ranking.' : 'Jogue conectado para registrar seu resultado.');
+      saveLabel.setText(result?.error ? result.error : result?.saved && result?.ranked ? 'Resultado salvo no ranking.' : d.practice || result?.saved ? 'Partida de treino: fora do ranking.' : GamePortal.user ? 'Resultado não salvo. Confira sua conexão ou sua sessão.' : 'Jogue conectado para registrar seu resultado.');
     });
     // poderes
     d.powers.forEach((p, i) => {

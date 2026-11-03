@@ -8,7 +8,23 @@ class GameScene extends Phaser.Scene {
 
   init(data) { this.charId = (data && data.char && CHARACTERS[data.char]) ? data.char : 'vanguard'; }
 
-  create() {
+  async create() {
+    this.gameReady = false;
+    this.player = null;
+    const initialization = Symbol('partida');
+    this.initialization = initialization;
+    this.events.once('shutdown', () => { if (this.initialization === initialization) this.initialization = null; });
+    const q = new URLSearchParams(location.search);
+    const practice = GamePortal.isAdmin || ['god', 't', 'boss'].some(key => q.has(key));
+    const run = await GamePortal.beginRun(this.charId, practice).catch(error => ({ error: error.message }));
+    if (this.initialization !== initialization) return;
+    this.runStart = Promise.resolve(run);
+    this.isPractice = practice || !!run?.run_id && !run.ranked;
+    this.buildScene(run?.settings || GamePortal.settings || {});
+    this.gameReady = true;
+  }
+
+  buildScene(settings) {
     // Parâmetros de URL (para testes): ?boss=30 &god &debug &t=200 &char=mage
     const q = new URLSearchParams(location.search);
     this.godMode = q.has('god');
@@ -16,7 +32,6 @@ class GameScene extends Phaser.Scene {
     this.bossTime = q.has('boss') ? parseFloat(q.get('boss')) : CONFIG.bossTime;
 
     // Regras públicas vêm do servidor e só são aplicadas ao iniciar uma partida.
-    const settings = GamePortal.settings || {};
     if (Number.isFinite(settings.healthDropChance)) CONFIG.healthDropChance = settings.healthDropChance;
     if (Number.isFinite(settings.bossTime)) CONFIG.bossTime = settings.bossTime;
     if (Number.isFinite(settings.spawnBaseRate)) CONFIG.spawn.baseRate = settings.spawnBaseRate;
@@ -28,9 +43,7 @@ class GameScene extends Phaser.Scene {
     this.t = q.has('t') ? parseFloat(q.get('t')) : 0;
     this.totalKills = 0;
     this.totalDamage = 0;
-    this.isPractice = GamePortal.isAdmin || ['god', 't', 'boss'].some(key => q.has(key));
     this.runSubmission = null;
-    this.runStart = GamePortal.beginRun(this.charId, this.isPractice).catch(error => ({ error: error.message }));
     this.ended = false;
     this.levelUpOpen = false;
     this.pendingLevels = 0;
@@ -307,6 +320,7 @@ class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------- loop principal
   update(time, delta) {
+    if (!this.gameReady) return;
     const dt = Math.min(delta / 1000, 0.05);
     this.drawJoystick();
     if (this.ended) { this.fx.update(dt); this.world.update(dt, this.t); return; }

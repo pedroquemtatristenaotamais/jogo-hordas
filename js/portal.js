@@ -265,7 +265,7 @@
     const logout = button('Sair da conta', async () => {
       logout.disabled = true;
       try {
-        await request('/api/logout', { method: 'POST' });
+        await request('/api/logout', { method: 'POST', body: {} });
         applySession({ user: null, csrf: null });
         dialog.close();
         portal.notice('Você está jogando como convidado.');
@@ -456,7 +456,11 @@
     },
     async beginRun(hero, practice = false) {
       await this.ready;
-      if (!this.user) return { run_id: null, ranked: false };
+      if (!this.user) {
+        // Convidados também recebem as regras atuais ao começar outra partida.
+        if (online) { try { await refreshSession(); } catch (_) { /* Offline continua jogável. */ } }
+        if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings } };
+      }
       try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice } }); }
       catch (error) { this.notice(error.message); return { run_id: null, ranked: false }; }
     },
