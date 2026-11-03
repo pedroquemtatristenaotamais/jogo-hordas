@@ -47,3 +47,13 @@ Checkpoint solicitado pelo usuário antes de sair. Branch: `main`.
 3. Antes de publicar na internet, será preciso preparar hospedagem/HTTPS e decidir a proteção adicional contra trapaça; essa publicação não foi solicitada nem executada.
 
 O servidor de contas ainda não foi publicado na internet. O ranking valida valores enviados pelo navegador; não é um sistema completo de proteção contra trapaça. Banco, senhas, sessões e arquivos privados são excluídos do versionamento.
+
+## Correção posterior — controles após Conta/Ranking
+
+- Causa reproduzida: o foco retornava ao botão da barra, que interceptava
+  o teclado mesmo com a partida retomada.
+- A última janela agora devolve o foco ao canvas e libera WASD/setas.
+- O teste de regressão falhou antes da correção e passou depois: oito cenários
+  reais de teclado/ponteiro, sem erros JavaScript. Pausa manual e melhorias
+  continuam respeitadas.
+- Os sete fluxos integrados de contas/ranking/admin também passaram após a correção, sem erros JavaScript.

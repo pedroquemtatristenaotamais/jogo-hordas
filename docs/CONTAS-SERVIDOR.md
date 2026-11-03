@@ -129,3 +129,14 @@ servidor em porta temporária e cria um banco fora da pasta pública, que é
 removido ao final. Não altera contas, senhas ou ranking de uso normal.
 As imagens da conferência são gravadas em `/tmp/muralha-ranking.png` e
 `/tmp/muralha-admin.png`; não contêm credenciais.
+
+Para conferir especificamente a recuperação de WASD/setas e os estados de pausa
+após clicar em Conta/Ranking, execute:
+
+```sh
+python3 tests/browser_accounts.py --controls
+```
+
+Esse teste usa cliques e teclas reais no navegador: X, botão de fechar, Escape,
+clique fora, teclas seguradas, pausa manual, escolha de melhoria e diálogos
+sobrepostos. Ao fechar a última janela, o foco retorna ao canvas do jogo.

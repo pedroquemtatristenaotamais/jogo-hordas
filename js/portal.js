@@ -193,7 +193,13 @@
       if (top) { top.panel.removeAttribute('aria-hidden'); top.panel.inert = false; top.panel.focus({ preventScroll: true }); }
       else {
         releaseInput();
-        if (previousFocus?.isConnected && !previousFocus.closest('[hidden]')) previousFocus.focus({ preventScroll: true });
+        // A barra de contas intercepta teclas enquanto seus botões têm foco.
+        // Ao voltar à partida, o teclado deve pertencer novamente ao canvas.
+        const canvas = game()?.canvas;
+        if (canvas?.isConnected) {
+          if (canvas.tabIndex < 0) canvas.tabIndex = 0;
+          canvas.focus({ preventScroll: true });
+        } else if (previousFocus?.isConnected && !previousFocus.closest('[hidden]')) previousFocus.focus({ preventScroll: true });
       }
     }, panel };
     const closeButton = button('×', dialog.close, 'portal-close');
