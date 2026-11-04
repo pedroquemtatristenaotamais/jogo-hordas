@@ -1,7 +1,8 @@
 # Sobrevivência de 15 minutos
 
-> Trabalho salvo a pedido do usuário antes de finalizar a revisão. A regressão
-> de dash com joystick e dois dedos está pendente; veja [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md).
+> Conclusão em 04/11: dash com joystick e dois dedos corrigido;
+> revisão final aprovada e suítes atuais passaram.
+> Evidência atual em [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md).
 
 Implementado em 03/11/2026. Abra `http://127.0.0.1:5501/` após iniciar
 `./INICIAR-JOGO.sh`. O endereço normal mantém a abertura com os créditos.

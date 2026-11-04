@@ -1,6 +1,5 @@
-> **Pausa solicitada em 03/11/2026:** expansão salva como trabalho em andamento.
-> Leia [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md) antes de continuar.
-> A regressão de joystick + dash com dois dedos ainda está pendente.
+> **Retomada em 04/11/2026:** dash com dois dedos corrigido e expansão revalidada.
+> Estado atual e comandos em [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md).
 
 # Checkpoint — 30/10/2026; retomada em 03/11/2026
 
@@ -73,3 +72,23 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
 - Compatibilidade de contas/admin/controles mantida. Documentação e referências em [EXPANSAO.md](EXPANSAO.md).
 - API: 19 testes passaram. Navegador: sete fluxos de contas, oito regressões de controles e integração da expansão sem erros JS.
 - Simulação de 900,05 segundos no Hardcore: pico de 240 inimigos, 6569 abates, ambos minibosses e chefe final com 12600 HP; cerca de 6 segundos de CPU no navegador automatizado. Essa simulação usa invencibilidade/escolhas automáticas e não é medição de FPS nem teste de equilíbrio humano.
+
+## Conclusão da retomada — 04/11/2026
+
+- Encerradas as cinco correções da revisão: dois dedos, baús alcançáveis,
+  reserva central de vagas, limites administrativos pequenos e texto do resultado.
+- A falha do segundo toque foi localizada no contador do Phaser 3.80.1.
+  O jogo usa `activePointers:3` para processar o mouse e dois toques.
+  O teste também passou a soltar o contato correto do dash, mantendo o joystick.
+- Aprovação focada: [whole-fix-review.md](retomada-expansao/whole-fix-review.md),
+  cinco de cinco itens resolvidos, sem quebra nova nas linhas corrigidas.
+- Verificação atual: 19 testes da API, sete fluxos de contas/admin, oito
+  regressões de controles e 12 grupos da expansão passaram. Zero erros JS
+  nas três suítes de navegador. A primeira execução de contas teve timeout;
+  a reprodução instrumentada e a suíte original isolada passaram depois,
+  sem mudança no código do painel. Evidência em [whole-fix-report.md](retomada-expansao/whole-fix-report.md).
+- Simulação de 15 minutos em Hardcore: pico de 240 inimigos, ambos os
+  minibosses e chefe final de 12600 HP. Captura de resultado inspecionada.
+- Servidor disponível em `http://127.0.0.1:5501/`; regra de fábrica 900 segundos.
+- Não há pendências bloqueadoras da expansão nesta revisão. Equilíbrio
+  com jogadores e desempenho em aparelhos físicos não foram medidos pela simulação.

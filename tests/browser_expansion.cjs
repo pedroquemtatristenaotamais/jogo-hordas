@@ -305,15 +305,21 @@ fs.mkdirSync(artifacts, { recursive: true });
     await touchPage.evaluate(() => { GAME.scene.getScene('Game').spawningEnabled = false; });
     const cdp = await touchContext.newCDPSession(touchPage);
     const finger = { id: 1, x: 200, y: 550 };
+    const dashFinger = { id: 2, x: 1204, y: 550 };
+    const initialX = await touchPage.evaluate(() => GAME.scene.getScene('Game').player.x);
     await cdp.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[finger] });
     await touchPage.waitForFunction(() => GAME.scene.getScene('Game').joy.active);
     finger.x=250;
     await cdp.send('Input.dispatchTouchEvent', { type:'touchMove', touchPoints:[finger] });
-    await touchPage.waitForFunction(() => GAME.scene.getScene('Game').joy.active && GAME.scene.getScene('Game').joy.x > .5).catch(async e=>{ console.log('TOUCH STATE',await touchPage.evaluate(()=>({joy:GAME.scene.getScene('Game').joy,pointers:GAME.input.pointers.map(p=>({id:p.id,x:p.x,y:p.y,down:p.isDown})),dialogs:document.querySelectorAll('[role=dialog]').length}))); throw e; });
-    await cdp.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[finger,{id:2,x:1204,y:550}] });
-    await touchPage.waitForFunction(() => GAME.scene.getScene('Game').player.dashCd > .1).catch(async e=>{ console.log('DASH STATE',await touchPage.evaluate(()=>({joy:GAME.scene.getScene('Game').joy,pointers:GAME.input.pointers.map(p=>({id:p.id,x:p.x,y:p.y,down:p.isDown})),button:!!GAME.scene.getScene('UI').dashButton,touch:GAME.device.input.touch}))); await touchPage.screenshot({path:artifacts+'/touch-failure.png'}); throw e; });
+    await touchPage.waitForFunction(x => {
+      const g = GAME.scene.getScene('Game');
+      return g.joy.active && g.joy.x > .5 && g.player.x > x + 1;
+    }, initialX);
+    await cdp.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[finger, dashFinger] });
+    await touchPage.waitForFunction(() => GAME.scene.getScene('Game').player.dashCd > .1);
     assert(await touchPage.evaluate(() => GAME.scene.getScene('Game').joy.active), 'Dash cancelled held joystick');
-    await cdp.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[finger] });
+    // Neste comando do Chrome, os pontos de touchEnd são os contatos a soltar.
+    await cdp.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[dashFinger] });
     assert(await touchPage.evaluate(() => GAME.scene.getScene('Game').joy.active && GAME.scene.getScene('Game').joy.x > .5), 'Dash release cancelled joystick');
     await cdp.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[] });
     await touchPage.waitForFunction(() => !GAME.scene.getScene('Game').joy.active);

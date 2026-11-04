@@ -1,3 +1,7 @@
+> Revisão inicial de 03/11. Os cinco achados abaixo foram encerrados em
+> 04/11; veja [whole-fix-review.md](whole-fix-review.md) e
+> [whole-fix-report.md](whole-fix-report.md) para a situação atual.
+
 # Whole-branch review — expansão
 
 Reviewed baseline `ec950d0` against the current uncommitted implementation, the supplied `whole-diff.txt`, plan, public expansion documentation, progress ledger, and surrounding integration code. Read-only review; no application changes or commits. The only written artifact is this report.

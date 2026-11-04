@@ -1,119 +1,94 @@
-# Retomada da expansão — pausa solicitada pelo usuário em 03/11/2026
+# Estado da expansão — retomada em 04/11/2026
 
-**Estado: checkpoint de trabalho, não uma versão final aprovada.** O usuário
-pediu para parar imediatamente por limite da sessão e salvar tudo no Git.
-A implementação e os testes atuais foram preservados na `main`. O agente
-`expansion_final_fixes` foi interrompido; não há testes de expansão rodando.
+A pausa de 03/11 foi retomada a pedido do usuário. O checkpoint anterior é
+`dbecd32`; ele contém a implementação principal e os registros da pausa.
+A falha restante de dois dedos foi reproduzida e corrigida. A re-revisão
+final aprovou as cinco correções. As suítes atuais passaram e não há
+pendências bloqueadoras desta expansão.
 
-## Projeto e execução
+## Projeto e acesso
 
-- Pasta: `/home/escola/Downloads/jogo-hordas`.
-- Phaser 3.80.1 local, JavaScript sem build, servidor Python stdlib/SQLite.
-- Servidor local atualizado em `http://127.0.0.1:5501/` (também pode iniciar
-  com `./INICIAR-JOGO.sh`). A URL normal abre a Intro. Não usar `?nointro`
-  como endereço normal enviado ao usuário.
-- Contas/banco externos: `~/.local/share/a-ultima-muralha/`. Senhas e dados
-  não estão no Git. A migração preservou contas, hashes de senha e resultados;
-  a API de produção confirmou `bossTime:900`.
-- Não há remoto Git configurado; o checkpoint é um commit local na `main`.
-- Usuário autoriza trabalhar/commitar na main e pediu para não solicitar
-  permissão repetidamente. Nesta pausa, não continuar implementação.
+- Pasta: `/home/escola/Downloads/jogo-hordas `, branch `main`.
+- Phaser 3.80.1 local, JavaScript sem build; servidor Python stdlib/SQLite.
+- Iniciar: `./INICIAR-JOGO.sh`. URL normal: `http://127.0.0.1:5501/`.
+  A URL normal abre a Intro; `?nointro`/`?char` são atalhos de desenvolvimento.
+- Contas e banco: `~/.local/share/a-ultima-muralha/`, fora do Git.
+- Remoto `origin`: `https://github.com/pedroquemtatristenaotamais/jogo-hordas.git`.
+  O checkpoint anterior foi criado localmente; a tentativa de envio naquela
+  sessão exigiu autenticação. Confira a sincronização atual com `git status`.
+- O usuário autorizou trabalhar e commitar na main e pediu para não repetir
+  pedidos de permissão. Não há instrução atual de pausa.
 
-## Snapshot anterior, antes das mudanças
+## Funcionalidades prontas para conferência
 
-- Commit anterior: `ec950d0` (correção do foco após conta/ranking).
-- Tag anotada: `snapshot/pre-expansao-20261103-100040`.
-- Código: `/home/escola/Downloads/backups-jogo-hordas/jogo-hordas-20261103-100040.tar.gz`.
-- Banco/credencial: `~/.local/share/a-ultima-muralha/backups/20261103-100040/`.
-- Integridade gzip conferida; contas e hashes comparados com a cópia privada.
+- Partida padrão de 15 minutos; minibosses aos 5/10 e chefe final aos 15.
+- Fácil, Médio, Difícil e Hardcore, com ranking e multiplicadores próprios.
+- Três armas comuns novas, seis evoluções, duas uniões e evolução do dash.
+- Baús físicos e grimório com requisitos/progresso; evoluções após 5 minutos.
+- Dash com Shift/Espaço ou toque, três níveis, fumaça e imunidade breve.
+- Quatro inimigos comuns novos e dois minibosses com padrões diferentes.
+- Login opcional, conta admin, ranking, controles e Intro preservados.
 
-## Já implementado nesta expansão
+Receitas, controles, balanceamento e referências: [EXPANSAO.md](EXPANSAO.md).
 
-- Duração padrão 900 segundos. Minibosses únicos aos 300/600 segundos com
-  250/600 XP × dificuldade e baú; chefe final aos 900.
-- Fácil, Médio, Difícil e Hardcore, tela de escolha após o herói, escalas
-  de inimigos/chefe/XP/cura/pontos. Limite real de 240 inimigos.
-- API vincula dificuldade à partida e filtra ranking por dificuldade;
-  migra resultados antigos para Médio e só altera as regras antigas de fábrica.
-- Armas novas: machados, gelo e veneno (8 níveis). Seis evoluções e duas
-  uniões com requisitos, destruição de órbitas/efeitos antigos e bloqueio
-  dos ingredientes consumidos. Uniões liberam um espaço; passivas permanecem.
-- Baús físicos, suprimentos 180/420/720 e menus de recompensa.
-- Grimório em G/botão, com receitas e progresso. Evoluções após 5 minutos
-  são adaptação para esta fase de 15 minutos.
-- Dash em Shift/Espaço/toque, três níveis; evolução de fumaça exige dash3,
-  Passos Leves e baú após300. Imunidade apenas durante o movimento.
-- Quatro inimigos comuns novos: raio, veneno, gelo/lentidão e investida;
-  dois minibosses com padrões próprios. Arte procedural e efeitos limitados.
-- Preservados Intro, cenário escuro, luzes alaranjadas, contas/admin e foco
-  do teclado ao fechar janelas. Barra do chefe acima da barra de contas.
-- Detalhes/receitas/fontes: [EXPANSAO.md](EXPANSAO.md).
+## O que foi concluído na retomada
 
-## Verificações concluídas antes da última correção
+1. Investigação capturou dois eventos DOM, mas apenas um toque processado
+   pelo Phaser com `activePointers:2`. Nesta versão, o mouse ocupa o índice 0
+   e o laço de toque usa`i < pointersTotal`; o valor 3 libera os contatos 1/2.
+2. Com o contador corrigido, o teste de soltura revelou um problema da
+   própria sequência CDP: soltava o contato do joystick. Agora solta o
+   contato do dash e confirma que o joystick permanece ativo, além de
+   verificar movimento real do personagem.
+3. Foram revalidadas as correções já salvas no checkpoint: baús alcançáveis
+   perto de muralhas/obstáculos e dentro da arena; reserva central de vagas
+   para os minibosses; regras customizadas de 1/2 inimigos; dificuldade
+   visível na tela de resultado.
 
-- Backend: 19 testes passaram (`python3 -m unittest discover -s tests -v`).
-- Navegador contas/admin: sete fluxos passaram, sem erros JS.
-- Regressão de controles/diálogos: oito cenários passaram, sem erros JS.
-- Expansão anterior à regressão de dois dedos: nove grupos passaram,
-  incluindo nove receitas, dano de onze armas, baú/teclado, dash/colisão/
-  imunidade, grimório, inimigos/minis, toque simples e simulação de 18 mil
-  quadros/900,05 segundos em Hardcore (pico240, chefe12600HP).
-- URL normal de produção abre a Intro sem erros JS; imagens em
-  `/tmp/muralha-expansao/` (fora do Git).
-- A simulação usa invencibilidade, armas evoluídas e escolhas automáticas;
-  verifica integração, não equilíbrio humano nem FPS.
+Relatório técnico e evidência do teste que falhou antes da correção:
+[whole-fix-report.md](retomada-expansao/whole-fix-report.md).
+Re-revisão focada: [whole-fix-review.md](retomada-expansao/whole-fix-review.md).
+Os briefs, probes e logs antigos nessa pasta são históricos do checkpoint;
+o teste oficial atual é `tests/browser_expansion.cjs`.
 
-## Revisão final e ponto exato pendente
+## Evidência atual
 
-A revisão integral (`retomada-expansao/whole-review.md`) encontrou:
-
-1. Segundo toque para dash enquanto segura joystick não era recebido.
-2. Baú suplementar poderia nascer fora da muralha e ficar inacessível.
-3. Eventos podiam ocupar as vagas reservadas dos minibosses e atrasá-los.
-4. Limites customizados1/2 impediam spawn comum.
-5. Dificuldade no resultado estava atrás dos painéis.
-
-A última rodada aplicou correções nos cinco caminhos. O agente confirmou
-que as novas regressões **não relacionadas ao toque passaram**: baús nos
-cantos, centro de obstáculo, arena, limite8/retry, população saturada nos
-prazos, limites pequenos, 900 segundos Hardcore e texto HARDCORE visível
-na tela de resultado. Essas alterações ainda precisam da re-revisão final.
-
-**Pendência bloqueadora: regressão real de dois dedos ainda falha.**
-`js/main.js` já usa `input.activePointers:2`. O CDP segura/move o primeiro
-contato e tenta pressionar DASH com o segundo; o joystick move, mas o dash
-não dispara. Último diagnóstico em `retomada-expansao/touch-probe.log`:
-`joy.active:true`, `joy.x:0.8333`, pointer1 em250/550 pressionado;
-pointer2 continua0/0, `down:false`; botão DASH existe e dispositivo é touch.
-Ainda não foi isolado se é sequência do CDP ou tratamento de entrada do jogo.
-Não afirmar que a suíte atual está toda verde.
-
-Os arquivos de diagnóstico `/tmp/touch-probe.cjs`, runner e log foram
-copiados para `docs/retomada-expansao/`. São cópias de investigação, não um
-segundo conjunto oficial de testes. O runner copiado aponta para `/tmp`;
-para reutilizá-lo, ajustar esse caminho ou usar o runner oficial abaixo.
-Briefs, relatórios e ledger também estão preservados nessa pasta. O agente
-foi interrompido antes de escrever `whole-fix-report.md`/diff final da rodada.
-O diff completo permanece recuperável pelo Git contra `ec950d0`.
-
-## Para continuar quando o usuário pedir
-
-1. Ler este arquivo e `retomada-expansao/whole-review.md` + `whole-fix-brief.md`.
-2. Isolar/corrigir o toque simultâneo; manter joystick ativo ao soltar só DASH.
-   A regressão está no fim de `tests/browser_expansion.cjs` e usa CDP
-   `Input.dispatchTouchEvent`. Preservar o teste que detecta a falha.
-3. Executar:
+- API: 19 testes passaram em04/11.
+- Expansão: 12 grupos passaram, zero erros JavaScript. Inclui dois dedos,
+  receitas/uniões, dano das armas, dash/fumaça/colisão, baús e coleta,
+  população saturada, minis/XP, regras pequenas e tela de resultado.
+- Controles: 8 regressões passaram, zero erros JavaScript.
+- Contas/admin: sete fluxos passaram na suíte original executada sozinha,
+  zero erros JavaScript. A primeira tentativa concorrente teve timeout
+  no comando de nível; a reprodução instrumentada e a suíte original
+  isolada passaram sem alterações no painel. O banco da primeira tentativa
+  não registrava uma requisição de nível. A causa do timeout não foi confirmada.
+- Hardcore: simulação até 900,05 segundos, pico 240 inimigos, chefe 12600HP.
+  Usa invencibilidade, armas evoluídas e escolhas automáticas; não mede
+  equilíbrio humano nem FPS.
+- Servidor local reiniciado em 5501; `/api/session` confirmou regra 900s.
+- Capturas em `/tmp/muralha-expansao/`; resultado visual conferido.
 
 ```sh
-PLAYWRIGHT_MODULE=/home/escola/.cache/ms-playwright-go/1.57.0/package python3 tests/browser_accounts.py --expansion
 python3 -m unittest discover -s tests -v
 PLAYWRIGHT_MODULE=/home/escola/.cache/ms-playwright-go/1.57.0/package python3 tests/browser_accounts.py
 PLAYWRIGHT_MODULE=/home/escola/.cache/ms-playwright-go/1.57.0/package python3 tests/browser_accounts.py --controls
+PLAYWRIGHT_MODULE=/home/escola/.cache/ms-playwright-go/1.57.0/package python3 tests/browser_accounts.py --expansion
 ```
 
-4. Re-revisar apenas a última rodada de correções, conferir capturas e
-   atualizar o checkpoint. Na capacidade administrativa extrema de apenas
-   uma entidade, preservar miniboss vivo e tentar o segundo após vaga;
-   o padrão240 deve garantir os dois no horário.
-5. Fazer commit final depois de confirmar os testes. Não recomeçar pesquisa
-   nem reconstruir as funcionalidades já implementadas.
+Os runners usam bancos descartáveis fora do projeto. Não alteram contas reais.
+
+## Snapshot anterior à expansão
+
+- Commit `ec950d0`, tag `snapshot/pre-expansao-20261103-100040`.
+- Código: `/home/escola/Downloads/backups-jogo-hordas/jogo-hordas-20261103-100040.tar.gz`.
+- Cópia privada consistente do banco e credencial:
+  `~/.local/share/a-ultima-muralha/backups/20261103-100040/`.
+- Integridade do arquivo e preservação das contas foram conferidas na sessão
+  anterior. Banco/credencial nunca foram incluídos no Git.
+
+## Decisão para regras administrativas extremas
+
+Com capacidade de apenas uma entidade, dois minibosses não cabem juntos.
+O encontro seguinte aguarda uma vaga e preserva o miniboss vivo. Com a
+capacidade padrão 240, a reserva garante ambos nos horários previstos.
