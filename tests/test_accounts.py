@@ -355,6 +355,8 @@ class BackendTests(unittest.TestCase):
         valid = [
             ('stats',{'hp':100,'maxHp':200,'speed':150,'damage':1,'rate':1,'area':1,'range':1}),
             ('spawn',{'enemy':'bat','count':2}), ('power',{'id':'slash','level':8}),
+            *[('spawn',{'enemy':enemy,'count':2}) for enemy in (
+                'forest_boar', 'forest_snake', 'forest_raven', 'forest_sentinel')],
             ('level',{'level':3}),('xp',{'amount':20}),('teleport',{'x':150,'y':3850}),
             ('god',{'enabled':True}),('spawning',{'enabled':False}),
             *[(name,{}) for name in ['heal','boss','clear','maxpowers','killboss']]

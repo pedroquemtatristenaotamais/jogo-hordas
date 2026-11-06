@@ -1,5 +1,12 @@
 # Retomada — campanha Floresta → Castelo
 
+Atualização em 06/11: quatro criaturas adicionais (Javali Musgoso, Serpente do
+Lodo, Corvo das Ruínas e Sentinela de Espinhos), totalizando doze espécies comuns.
+Arte original com quatro quadros, desbloqueios graduais, quatro ondas próprias
+e spawn administrativo. Detalhes atuais em [FLORESTA.md](FLORESTA.md).
+Verificação dessa atualização: API 21/21; floresta 9/9, sem erros JavaScript;
+simulação da fase encontrou as doze espécies. Base anterior: a520e30.
+
 ## Estado
 
 Implementação concluída em 04/11/2026, base anterior 08ec5a2. A floresta é a

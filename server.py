@@ -53,6 +53,7 @@ ENEMIES = frozenset((
     'hell_charger', 'storm_warden', 'crypt_lord',
     'forest_wolf', 'forest_spider', 'forest_wisp', 'forest_bandit', 'forest_rootling',
     'forest_moth', 'forest_druid', 'forest_stalker', 'forest_matriarch', 'forest_huntsman',
+    'forest_boar', 'forest_snake', 'forest_raven', 'forest_sentinel',
 ))
 EMPTY_COMMANDS = frozenset(('heal', 'boss', 'clear', 'maxpowers', 'killboss'))
 STAT_LIMITS = {

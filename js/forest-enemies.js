@@ -2,6 +2,7 @@
 const FOREST_ENEMY_IDS = Object.freeze([
   'forest_wolf', 'forest_spider', 'forest_wisp', 'forest_bandit',
   'forest_rootling', 'forest_moth', 'forest_druid', 'forest_stalker',
+  'forest_boar', 'forest_snake', 'forest_raven', 'forest_sentinel',
 ]);
 
 Object.assign(ENEMIES, {
@@ -37,6 +38,22 @@ Object.assign(ENEMIES, {
     stage:'forest', name:'Espreitador dos Galhos', kind:'melee', hp:145, speed:77, dmg:17, radius:17, xp:12, from:340, weight:2.5, maxAlive:8, kb:.45, ambush:true,
     charge:{range:510,min:120,windup:.85,dur:.55,mul:4,cd:5.2,recover:.95,col:0xc7c2a1},
   },
+  forest_boar: {
+    stage:'forest', name:'Javali Musgoso', kind:'melee', hp:65, speed:64, dmg:12, radius:15, xp:6, from:70, weight:4, maxAlive:10, kb:.45,
+    charge:{range:360,min:110,windup:.85,dur:.55,mul:3.4,cd:5.5,recover:.9,col:0xd0bd8b},
+  },
+  forest_snake: {
+    stage:'forest', name:'Serpente do Lodo', kind:'ranged', hp:28, speed:54, dmg:6, radius:10, xp:4, from:115, weight:4, maxAlive:14, keep:175, poison:true,
+    shot:{type:'magic',cd:3.8,range:330,count:1,speed:175,tint:0xb2cf72,slow:1.1},
+  },
+  forest_raven: {
+    stage:'forest', name:'Corvo das Ruínas', kind:'flyer', hp:17, speed:100, dmg:4, radius:10, xp:3, from:35, weight:4.5, maxAlive:16, fly:true,
+    shot:{type:'bolt',cd:4.6,range:320,count:3,spread:.18,speed:185,tint:0xb0c2d4},
+  },
+  forest_sentinel: {
+    stage:'forest', name:'Sentinela de Espinhos', kind:'melee', hp:175, speed:31, dmg:16, radius:18, xp:13, from:280, weight:2, maxAlive:5, kb:.2,
+    sweep:{range:125,windup:1.05,cd:5.6,half:.8,dmg:20,col:0xb8cf9e},
+  },
   forest_matriarch: {
     stage:'forest', name:'Matriarca do Brejo', kind:'caster', hp:1300, speed:55, dmg:20, radius:30, xp:0, from:Infinity, weight:0, keep:220, kb:.15, poison:true,
     shell:{range:680,radius:70,delay:1.35,dmg:22,cd:3.2,col:0xc3d170,kind:'bone'},
@@ -53,13 +70,17 @@ Object.assign(ENEMIES, {
 
 const FOREST_EVENTS = Object.freeze([
   {t:50,type:'swarm',enemy:'forest_moth',count:16,msg:'As mariposas cobrem a lua!'},
+  {t:85,type:'pack',list:{forest_boar:5,forest_wolf:6},msg:'A terra treme entre as raízes!'},
   {t:120,type:'pack',list:{forest_wolf:12,forest_bandit:4},msg:'Uivos entre as árvores!'},
+  {t:175,type:'ring',enemy:'forest_snake',count:12,msg:'Sibilos surgem do lodo!'},
   {t:195,type:'ring',enemy:'forest_spider',count:18,msg:'O brejo se move ao seu redor!'},
   {t:270,type:'pack',list:{forest_rootling:8,forest_wisp:6},msg:'As raízes despertam!'},
   {t:375,type:'pack',list:{forest_druid:2,forest_bandit:8,forest_wolf:8},msg:'O círculo dos druidas se fecha!'},
+  {t:420,type:'swarm',enemy:'forest_raven',count:16,msg:'Os corvos encontraram sua trilha!'},
   {t:465,type:'swarm',enemy:'forest_stalker',count:8,msg:'Algo caça nas sombras!'},
   {t:560,type:'ring',enemy:'forest_moth',count:24,msg:'Uma nuvem de asas fúnebres!'},
   {t:675,type:'pack',list:{forest_rootling:10,forest_druid:2,forest_spider:10},msg:'A floresta defende seu coração!'},
+  {t:735,type:'pack',list:{forest_sentinel:4,forest_rootling:6},msg:'As sentinelas abandonam as ruínas!'},
   {t:790,type:'pack',list:{forest_stalker:6,forest_wolf:14,forest_wisp:6},msg:'A última caçada começou!'},
 ]);
 
@@ -184,6 +205,71 @@ function drawForestStalker(P, frame) {
   P.line(16,5+bob,18,1,hi,2); P.line(18,2,22,0,bone); P.p(13,12+bob,'#a5ac8a'); P.r(9,7+bob,2,1,'#738165');
 }
 
+function drawForestBoar(P, frame) {
+  const step=[0,1,0,-1][frame], bob=frame%2, ink='#172324', hide='#655f4b', shade='#414a3b', moss='#89916a', ivory='#ddd4ad';
+  P.shadow(12,22,22);
+  P.line(4,13+bob,1,11+bob,ink,2);P.line(1,11+bob,2,9+bob,hide);
+  for(const [x,off] of [[5,step],[9,-step],[15,step],[18,-step]]) {
+    P.r(x+off,16,3,5,ink);P.r(x+off,17,2,3,shade);P.r(x+off,20,3,2,'#2c3331');
+  }
+  P.r(3,9+bob,16,10,ink);P.r(4,10+bob,14,8,hide);P.r(4,15+bob,13,3,shade);
+  P.line(5,9+bob,15,8+bob,moss,2);P.r(6,11+bob,3,2,'#929278');P.r(11,12+bob,3,2,'#797b5b');
+  for(const [x,y] of [[5,7],[8,6],[11,6],[14,7]]) P.line(x,y+bob,x+1,10+bob,ink,2);
+  P.r(16,10+bob,6,8,ink);P.r(17,11+bob,5,6,hide);P.r(20,13+bob,4,4,'#9a8e71');
+  P.r(17,8+bob,3,4,ink);P.p(18,9+bob,'#9e8b6d');P.p(20,12+bob,'#e5d799');
+  P.r(22,14+bob,2,1,'#313c35');P.line(20,17+bob,23,16+bob,ivory,2);P.line(23,16+bob,23,12+bob,ivory);
+  P.p(5,10+bob,moss);P.p(13,10+bob,'#b1ad7d');P.p(10,14+bob,shade);
+}
+
+function drawForestSnake(P, frame) {
+  const sway=[0,1,0,-1][frame], ink='#182b2a', scale='#60775a', shade='#3e5746', belly='#b8bb7f', glint='#91a577';
+  P.shadow(12,22,20);
+  // Corpo sinuoso baixo e cabeça erguida, diferente dos quadrúpedes.
+  const points=[[2,20],[7+sway,18],[13+sway,20],[18,17],[11-sway,14],[7,12],[12+sway,9],[18,9]];
+  for(let i=1;i<points.length;i++) P.line(...points[i-1],...points[i],ink,5);
+  for(let i=1;i<points.length;i++) P.line(...points[i-1],...points[i],scale,3);
+  for(let i=1;i<points.length;i++) P.line(points[i-1][0],points[i-1][1]+2,points[i][0],points[i][1]+2,shade);
+  P.line(8,19,14,20,belly);P.line(12,15,17,17,belly);P.line(8,12,13+sway,10,glint);
+  for(const [x,y] of [[5,18],[9,19],[15,18],[10,13],[13,9]]) P.p(x+sway,y,'#c3c18b');
+  P.r(16,5,6,6,ink);P.r(17,5,5,5,scale);P.r(18,9,4,1,belly);P.r(19,6,3,1,'#9aae74');
+  P.p(20,7,'#e8d398');P.p(21,7,'#293e34');P.p(22,8,'#26392f');
+  P.line(22,9,23,10+sway,'#b27e71');P.p(23,11+sway,'#d2a18b');
+}
+
+function drawForestRaven(P, frame) {
+  const lift=[0,3,6,3][frame], bob=frame%2, ink='#15212e', feather='#35465c', blue='#657e90', edge='#9dafa8';
+  P.shadow(12,22,10);
+  for(const side of [-1,1]) {
+    const ctx=P.g;ctx.save();if(side<0){ctx.translate(24,0);ctx.scale(-1,1);}
+    P.line(12,12,3,3+lift,ink,4);P.line(12,11,4,3+lift,feather,2);
+    P.line(6,6+lift,1,6+lift,ink,2);P.line(8,8+lift,2,10+lift,ink,2);
+    P.line(10,10+lift,5,13+lift,ink,2);P.line(5,5+lift,10,10,blue);P.p(3,7+lift,edge);
+    ctx.restore();
+  }
+  P.line(10,15+bob,8,20+bob,ink,3);P.line(12,15+bob,12,21+bob,feather,2);P.line(14,15+bob,16,20+bob,ink,2);
+  P.r(9,9+bob,7,8,ink);P.r(10,9+bob,5,6,feather);P.r(11,11+bob,2,3,blue);
+  P.r(12,5+bob,6,6,ink);P.r(13,5+bob,4,4,feather);P.line(17,8+bob,21,9+bob,'#a2ab9c',2);
+  P.p(16,7+bob,'#d9e8c9');P.p(14,5+bob,blue);P.line(10,16+bob,9,18+bob,edge);P.line(14,16+bob,15,18+bob,edge);
+}
+
+function drawForestSentinel(P, frame) {
+  const step=[0,1,0,-1][frame], bob=frame%2, ink='#162928', stone='#67756d', shade='#3e524c', light='#a0afa0', vine='#7c8f5d';
+  P.shadow(12,22,22);
+  for(const [x,off] of [[6,step],[14,-step]]) {
+    P.r(x,16,4,5,ink);P.r(x+1,17,2,3,stone);P.r(x-1,21+Math.min(0,off),6,1,light);
+  }
+  P.r(4,8+bob,16,11,ink);P.r(5,9+bob,14,8,stone);P.r(6,10+bob,3,6,light);P.r(15,10+bob,3,8,shade);
+  P.line(10,10+bob,13,13+bob,ink);P.line(13,13+bob,11,17+bob,ink);P.line(5,14+bob,18,14+bob,vine,2);
+  P.r(8,3+bob,9,7,ink);P.r(9,3+bob,7,6,stone);P.r(9,4+bob,2,4,light);P.r(10,6+bob,6,2,shade);
+  P.p(11,6+bob,'#dfebbb');P.p(14,6+bob,'#dfebbb');P.r(11,9+bob,3,1,ink);
+  P.line(5,10+bob,1,6+bob,vine,2);P.line(8,9+bob,6,4+bob,light);P.line(18,10+bob,21,5+bob,vine,2);
+  P.r(2,11+bob,3,7,ink);P.r(2,12+bob,2,4,shade);P.r(18,11+bob,3,5,ink);P.r(18,12+bob,2,4,stone);
+  // Maça de raízes e pontas pálidas, presa à mão direita.
+  P.line(21,8+bob,21,22,'#8b7855',2);P.r(19,4+bob,5,7,ink);P.r(20,5+bob,3,5,'#6c7953');
+  P.line(20,5+bob,18,3+bob,light);P.line(22,6+bob,23,3+bob,light);P.line(20,9+bob,18,10+bob,vine);
+  P.p(5,9+bob,vine);P.p(15,3+bob,vine);P.r(7,17+bob,3,2,'#879a67');
+}
+
 function drawForestMatriarch(P, frame) {
   const step=[0,1,0,-1][frame], ink='#122523', shell='#52634c', scar='#a3a577', egg='#c8cf9a';
   P.shadow(12,22,23);
@@ -222,5 +308,7 @@ Object.assign(ENEMY_ART, {
   forest_wisp:forestArt(drawForestWisp), forest_bandit:forestArt(drawForestBandit),
   forest_rootling:forestArt(drawForestRootling), forest_moth:forestArt(drawForestMoth),
   forest_druid:forestArt(drawForestDruid), forest_stalker:forestArt(drawForestStalker),
+  forest_boar:forestArt(drawForestBoar), forest_snake:forestArt(drawForestSnake),
+  forest_raven:forestArt(drawForestRaven), forest_sentinel:forestArt(drawForestSentinel),
   forest_matriarch:forestArt(drawForestMatriarch,4), forest_huntsman:forestArt(drawForestHuntsman,4),
 });

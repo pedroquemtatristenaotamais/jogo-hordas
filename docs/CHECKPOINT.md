@@ -1,4 +1,4 @@
-> **Atualização em 04/11/2026:** campanha com floresta como primeira fase e castelo como segunda.
+> **Atualização em 06/11/2026:** floresta com doze espécies comuns; campanha Floresta → Castelo.
 > Leia [FLORESTA.md](FLORESTA.md) e [RETOMADA-FLORESTA.md](RETOMADA-FLORESTA.md) para o estado atual.
 
 # Checkpoint — 30/10/2026; retomada em 03/11/2026
@@ -113,3 +113,16 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
   [revisao-floresta/review.md](revisao-floresta/review.md).
 - URL normal conferida: Intro → convidado → herói → dificuldade → floresta.
 - Capturas em `/tmp/muralha-floresta/`; documentação em [FLORESTA.md](FLORESTA.md).
+
+## Mais criaturas na floresta — 06/11/2026
+
+- Javali Musgoso (investida), Serpente do Lodo (veneno com lentidão),
+  Corvo das Ruínas (voo e penas em leque) e Sentinela de Espinhos (golpe amplo).
+- Doze espécies comuns ao todo; quatro animações originais de quatro quadros,
+  desbloqueios progressivos e ondas adicionais. Ferramenta de spawn do admin
+  reconhece os quatro tipos; o diretor normal do castelo continua separado.
+- API: 21 testes passaram. Floresta: nove grupos de navegador passaram, zero
+  erros JavaScript, incluindo os ataques novos e a campanha completa.
+  Simulação de 15 minutos encontrou as doze espécies, pico de 104 inimigos
+  com build evoluída e invencibilidade; não mede FPS nem equilíbrio humano.
+- Arte conferida em `/tmp/muralha-floresta/novas-criaturas.png`.

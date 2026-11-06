@@ -52,8 +52,17 @@ escolhida. O chefe mantém sua escala de dificuldade própria. O limite de
 | Mariposa Fúnebre | Voa em trajetória ondulada |
 | Druida Corrompido | Dispara e invoca raízes |
 | Espreitador dos Galhos | Se oculta ao longe e prepara uma emboscada |
+| Javali Musgoso | Prepara uma investida forte; resiste a empurrões |
+| Serpente do Lodo | Mantém distância e cospe veneno que causa lentidão |
+| Corvo das Ruínas | Voa em trajetória ondulada e lança três penas em leque |
+| Sentinela de Espinhos | Avança lentamente e anuncia uma varredura ampla |
 
-As ondas da floresta e do castelo são separadas. Os dez inimigos da mata,
+Os quatro tipos adicionais começam a aparecer aos 70, 115, 35 e 280 segundos,
+respectivamente, na dificuldade Média. Há ondas próprias com javalis aos 85 s,
+serpentes aos 175 s, corvos aos 420 s e sentinelas aos 735 s. A dificuldade
+antecipa os desbloqueios no diretor; as ondas mantêm seus horários.
+
+As ondas da floresta e do castelo são separadas. Os catorze inimigos da mata,
 incluindo os minibosses, e seu chefe têm sprites procedurais próprios.
 
 ## Contas e ranking
@@ -95,7 +104,7 @@ python3 tests/browser_accounts.py
 
 O runner usa um banco descartável fora do projeto. `PLAYWRIGHT_MODULE` e
 `CHROME_PATH` podem apontar para instalações locais de Playwright e Chrome.
-O teste da floresta cobre bordas, trilha, decoração estática, portão selado,
+O teste da floresta cobre as doze espécies, seus ataques, bordas, trilha, decoração estática, portão selado,
 dois minibosses, morte do chefe, caminhada sem gerar pontos, passagem com
 progressão, vitória final, reinício, sessão/mesma partida, clique duplicado
 e falha de rede. A simulação de 15 minutos usa invencibilidade, armas

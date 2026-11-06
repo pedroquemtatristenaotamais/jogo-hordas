@@ -54,6 +54,47 @@ const artifacts = '/tmp/muralha-floresta'; fs.mkdirSync(artifacts, { recursive: 
     await view(2000, 650, 'portao-selado');
     check('árvores contêm o mapa, ondas são próprias e porta não permite pular o chefe');
 
+    await page.evaluate(() => {
+      const g=GAME.scene.getScene('Game'), m=g.enemies, p=g.player;
+      const added=['forest_boar','forest_snake','forest_raven','forest_sentinel'];
+      const selected=new Set();
+      for(let i=0;i<3000;i++) selected.add(m.pickType(850));
+      for(const id of added) {
+        if(!selected.has(id)) throw Error('Nova criatura não aparece nas hordas: '+id);
+        if(STAGES.castle.enemyIds.includes(id)) throw Error('Criatura da mata vazou para o castelo: '+id);
+        if(!g.textures.exists('e_'+id) || g.anims.get('walk_e_'+id)?.frames.length!==4) throw Error('Arte/animação ausente: '+id);
+      }
+      m.killAllSilently(); g.grid.clear(); g.enemyShots.clear();
+      p.x=2000;p.y=2000;g.spawningEnabled=true;
+      const spawn=id=>m.spawn(id,p.x-200,p.y,1);
+      const boar=spawn('forest_boar');boar.chargeCd=0;
+      m.ai(boar,.05,p,1);
+      if(boar.state!=='windup') throw Error('Javali investe sem preparação');
+      m.ai(boar,.9,p,1);
+      const x=boar.x;m.ai(boar,.15,p,1);
+      if(boar.state!=='charge' || boar.x-x<20) throw Error('Javali não completa a investida');
+      m.kill(boar,true);
+      const snake=spawn('forest_snake');snake.atkCd=0;
+      m.ai(snake,.05,p,1);
+      const venom=g.enemyShots.items.filter(s=>s.live);
+      if(venom.length!==1 || venom[0].slow<=0 || venom[0].dmg<=0) throw Error('Serpente não cospe veneno com lentidão');
+      m.ai(snake,.1,p,1);
+      if(g.enemyShots.items.filter(s=>s.live).length!==1) throw Error('Serpente ignora cadência');
+      m.kill(snake,true);g.enemyShots.clear();
+      const raven=spawn('forest_raven');raven.atkCd=0;
+      m.ai(raven,.05,p,1);
+      const feathers=g.enemyShots.items.filter(s=>s.live);
+      if(feathers.length!==3 || new Set(feathers.map(s=>Math.round(Math.atan2(s.vy,s.vx)*100))).size!==3) throw Error('Corvo não dispara leque de penas');
+      m.kill(raven,true);g.enemyShots.clear();
+      const sentinel=spawn('forest_sentinel');sentinel.x=p.x-80;sentinel.atkCd=0;
+      const before=g.hazards.length;m.ai(sentinel,.05,p,1);
+      const sweep=g.hazards[before];
+      if(sentinel.state!=='cast' || sweep?.shape!=='cone' || sweep.delay<.7) throw Error('Sentinela não anuncia o golpe de espinhos');
+      g.updateHazards(2);m.kill(sentinel,true);
+      g.spawningEnabled=false;
+    });
+    check('quatro novas criaturas aparecem só na floresta, com animação e ataques próprios');
+
     const miniIds = await page.evaluate(() => {
       const g = GAME.scene.getScene('Game'), ids=[];
       g.spawningEnabled=true;
@@ -150,13 +191,13 @@ const artifacts = '/tmp/muralha-floresta'; fs.mkdirSync(artifacts, { recursive: 
         if(g.enemies.alive>240||g.hazards.length>41)throw Error('Orçamento excedido na floresta');
       }
       delete g.openLevelUp;delete g.openEvolutionChest;g.botInput=null;
-      if(!g.bossStarted||!(g.boss instanceof ForestBoss)||g.encounters.spawned.filter(Boolean).length!==2||seen.size!==8)throw Error('Encontros ou variedade incompleta na simulação');
+      if(!g.bossStarted||!(g.boss instanceof ForestBoss)||g.encounters.spawned.filter(Boolean).length!==2||seen.size!==12)throw Error('Encontros ou variedade incompleta na simulação: '+[...seen].join(','));
       p.gainXp(1000000);if(p.level!==100)throw Error('Campanha ultrapassa nível suportado');
       g.pendingLevels=0;
       return {seconds:g.t,peak,types:seen.size,milliseconds:Math.round(performance.now()-begin)};
     });
     console.log(JSON.stringify(stress));
-    check('15 minutos simulados: oito criaturas, dois minis, chefe próprio e pools limitados');
+    check('15 minutos simulados: doze criaturas, dois minis, chefe próprio e pools limitados');
 
     // Mesma partida autenticada entre fases; sem esperar quinze minutos em tempo real.
     await page.evaluate(() => GamePortal.openLogin());
