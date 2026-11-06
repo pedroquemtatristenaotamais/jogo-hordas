@@ -20,13 +20,13 @@ fs.mkdirSync(artifacts, { recursive: true });
   async function fresh(difficulty = 'medium') {
     await page.evaluate(d => {
       GAME.scene.stop('UI'); GAME.scene.stop('Game');
-      GAME.scene.start('Game', { char: 'mage', difficulty: d });
+      GAME.scene.start('Game', { char: 'mage', difficulty: d, stage: 'castle' });
     }, difficulty);
     await ready();
     await page.evaluate(() => { const g = GAME.scene.getScene('Game'); g.godMode = true; g.spawningEnabled = false; Sfx.muted = true; });
   }
   try {
-    await page.goto(base + '/?nointro');
+    await page.goto(base + '/?nointro&stage=castle');
     await page.waitForFunction(() => window.GAME?.scene.isActive('Menu'));
     if (await page.getByRole('dialog').count()) await page.getByRole('button', { name: 'Continuar como convidado' }).click();
     await page.evaluate(() => GAME.scene.getScene('Menu').go());
@@ -293,14 +293,14 @@ fs.mkdirSync(artifacts, { recursive: true });
     await page.waitForFunction(() => GAME.scene.isActive('End'));
     assert(await page.evaluate(() => {
       const sc=GAME.scene.getScene('End'), list=sc.children.list;
-      const label=list.find(o=>o.type==='Text' && o.text===resolveDifficulty('hardcore').name.toUpperCase());
+      const label=list.find(o=>o.type==='Text' && o.text===resolveDifficulty('hardcore').name.toUpperCase()+' • '+STAGES.castle.shortName.toUpperCase());
       return label && label.visible && label.alpha>0 && list.filter(o=>o.type==='Rectangle').every(o=>o.depth<label.depth || list.indexOf(o)<list.indexOf(label) || o.getBounds().bottom<label.getBounds().top || o.getBounds().top>label.getBounds().bottom);
     }), 'End difficulty label occluded');
     await page.screenshot({path:artifacts+'/resultado-hardcore.png'});
     check('resultado mostra dificuldade acima dos fundos');
     const touchContext = await browser.newContext({ viewport: { width: 1280, height: 720 }, hasTouch: true });
     const touchPage = await touchContext.newPage(); touchPage.on('pageerror', e => errors.push(e.message));
-    await touchPage.goto(base + '/?char=ranger&god&nointro');
+    await touchPage.goto(base + '/?char=ranger&god&nointro&stage=castle');
     await touchPage.waitForFunction(() => window.GAME?.scene.getScene('Game')?.gameReady && GAME.scene.isActive('Game'));
     await touchPage.evaluate(() => { GAME.scene.getScene('Game').spawningEnabled = false; });
     const cdp = await touchContext.newCDPSession(touchPage);

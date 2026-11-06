@@ -33,7 +33,8 @@ class EncounterDirector {
         const ordinary=sc.enemies.pool.find(e=>e.alive && !e.isMiniBoss && !e.isBoss);
         if(ordinary) sc.enemies.kill(ordinary,true);
       }
-      const e=sc.enemies.spawn(i===0?'storm_warden':'crypt_lord',pt.x,pt.y,sc.enemies.hpMul(sc.t),false,true);
+      const miniIds=sc.stage?.minis || ['storm_warden','crypt_lord'];
+      const e=sc.enemies.spawn(miniIds[i],pt.x,pt.y,sc.enemies.hpMul(sc.t),false,true);
       if(!e) continue; // Tenta novamente no próximo quadro se o pool estiver cheio.
       e.isMiniBoss=true; e.miniIndex=i+1; e.miniRewarded=false;
       this.spawned[i]=true; this.minis.push(e);

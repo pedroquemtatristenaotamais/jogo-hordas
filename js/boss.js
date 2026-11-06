@@ -3,11 +3,12 @@
 //  Máquina de estados com ataques telegrafados:
 //    Golpe de Espada · Investida Sombria · Onda de Energia ·
 //    Explosão Sombria · Ataque de Fúria (vida baixa).
-//  Valores de dano/tempo ficam em BOSS (data.js).
+//  O parâmetro data permite chefes próprios de cada fase; BOSS mantém o castelo.
 // ============================================================
 class Boss {
-  constructor(scene, x, y) {
-    const D = BOSS;
+  constructor(scene, x, y, data = BOSS) {
+    this.data = data;
+    const D = this.data;
     this.scene = scene;
     this.isBoss = true;
     this.uid = ENEMY_UID++;
@@ -20,9 +21,9 @@ class Boss {
     this.def = { name: D.name, kind: 'boss', kb: 0, dmg: 0, radius: D.radius };
 
     this.shadow = scene.add.image(x, y + 54, 'shadow').setScale(3, 2.2).setAlpha(0);
-    this.aura = scene.add.image(x, y, 'glow_red').setBlendMode(Phaser.BlendModes.ADD).setScale(4).setAlpha(0).setDepth(8400);
-    this.sprite = scene.add.sprite(x, y, 'boss', 0).setAlpha(0);
-    this.sprite.play('boss_walk');
+    this.aura = scene.add.image(x, y, D.auraTexture || 'glow_red').setBlendMode(Phaser.BlendModes.ADD).setScale(4).setAlpha(0).setDepth(8400);
+    this.sprite = scene.add.sprite(x, y, D.texture || 'boss', 0).setAlpha(0);
+    this.sprite.play(this.data.anim || 'boss_walk');
 
     this.state = 'intro'; this.stateT = 2.4;
     this.invuln = true;
@@ -33,8 +34,8 @@ class Boss {
     this.trailT = 0; this.age = 0;
     this.meat = [false, false];
 
-    scene.fx.ring(x, y, 20, 280, 0.9, 0xff2a2a, 5, 0.25);
-    scene.fx.burst('dark', x, y, 26);
+    scene.fx.ring(x, y, 20, 280, 0.9, D.introColor ?? 0xff2a2a, 5, 0.25);
+    scene.fx.burst(D.particle || 'dark', x, y, 26);
     Sfx.play('boss');
   }
 
@@ -44,7 +45,7 @@ class Boss {
     if (state === 'chase') this.walkPose();
   }
   setPose(f) { this.sprite.anims.stop(); this.sprite.setFrame(f); }
-  walkPose() { if (!this.sprite.anims.isPlaying) this.sprite.play('boss_walk'); }
+  walkPose() { if (!this.sprite.anims.isPlaying) this.sprite.play(this.data.anim || 'boss_walk'); }
   rest(t, pose) {
     this.go('rest', t); this.setPose(pose === undefined ? 0 : pose);
     this.atkCd = this.fury ? 0.45 : 1.0;
@@ -70,7 +71,7 @@ class Boss {
 
   // --- Golpe de Espada ---
   startSlash(chain) {
-    const sc = this.scene, p = sc.player, D = BOSS.slash;
+    const sc = this.scene, p = sc.player, D = this.data.slash;
     this.ang = Math.atan2(p.y - this.y, p.x - this.x);
     const w = (chain ? D.windup * 0.55 : D.windup) * (this.fury ? 0.8 : 1);
     if (!chain) this.combo = this.fury ? 1 : 0; else this.combo--;
@@ -79,7 +80,7 @@ class Boss {
     Sfx.play('warn');
   }
   slashStrike() {
-    const sc = this.scene, p = sc.player, D = BOSS.slash;
+    const sc = this.scene, p = sc.player, D = this.data.slash;
     this.setPose(3); this.go('slash_hit', 0.3);
     const dx = p.x - this.x, dy = p.y - this.y, dist = Math.hypot(dx, dy);
     if (!p.dead && dist <= D.reach + p.radius && Math.abs(angleDiff(Math.atan2(dy, dx), this.ang)) <= D.half) p.takeDamage(D.dmg * this.damageMul);
@@ -94,18 +95,18 @@ class Boss {
   startCharge(again) {
     if (!again) this.dashes = this.fury ? 2 : 1;
     this.locked = false;
-    const w = BOSS.charge.windup * (again ? 0.55 : 1) * (this.fury ? 0.8 : 1);
+    const w = this.data.charge.windup * (again ? 0.55 : 1) * (this.fury ? 0.8 : 1);
     this.go('charge_wind', w); this.setPose(2);
   }
 
   // --- Onda de Energia ---
   startWave() {
-    this.go('wave_wind', BOSS.wave.windup * (this.fury ? 0.8 : 1)); this.setPose(2);
+    this.go('wave_wind', this.data.wave.windup * (this.fury ? 0.8 : 1)); this.setPose(2);
     this.scene.fx.ring(this.x, this.y, 10, 90, 0.5, 0xff3a3a, 3, 0.2);
     Sfx.play('warn');
   }
   fireWave() {
-    const sc = this.scene, p = sc.player, D = BOSS.wave;
+    const sc = this.scene, p = sc.player, D = this.data.wave;
     const base = Math.atan2(p.y - this.y, p.x - this.x), n = this.fury ? D.fury : D.count;
     const volley = (extra) => {
       for (let i = 0; i < n; i++) {
@@ -127,7 +128,7 @@ class Boss {
 
   // --- Explosão Sombria ---
   startBlast() {
-    const sc = this.scene, p = sc.player, D = BOSS.blast, A = CONFIG.arena;
+    const sc = this.scene, p = sc.player, D = this.data.blast, A = CONFIG.arena;
     const n = this.fury ? D.fury : D.count;
     this.go('blast_wind', D.windup); this.setPose(2);
     for (let i = 0; i < n; i++) {
@@ -147,8 +148,8 @@ class Boss {
     this.invuln = true;
     this.go('fury', 1.5); this.setPose(2);
     const sc = this.scene;
-    sc.fx.teleCircle(this.x, this.y, 1, 0.01, 0xff0000);
-    sc.announce('O Cavaleiro Sombrio entra em FÚRIA!', 0xff2a2a);
+    sc.fx.teleCircle(this.x, this.y, 1, 0.01, this.data.furyColor ?? 0xff0000);
+    sc.announce(this.data.furyMessage || ('O ' + this.data.name + ' entra em FÚRIA!'), this.data.furyColor ?? 0xff2a2a);
     sc.cameras.main.shake(1200, 0.006);
     Sfx.play('fury');
   }
@@ -161,7 +162,7 @@ class Boss {
     // carne que cura em 66% e 33% da vida
     if (!this.meat[0] && f <= 0.66) { this.meat[0] = true; this.dropMeat(); }
     if (!this.meat[1] && f <= 0.33) { this.meat[1] = true; this.dropMeat(); }
-    if (!this.furyDone && f <= BOSS.furyAt && this.hp > 0) this.startFury();
+    if (!this.furyDone && f <= this.data.furyAt && this.hp > 0) this.startFury();
     if (this.hp <= 0) { this.hp = 0; this.die(); }
     return true;
   }
@@ -172,31 +173,32 @@ class Boss {
   }
 
   die() {
+    if (!this.alive) return;
     const sc = this.scene;
     this.alive = false; this.state = 'dead';
     sc.enemyShots.clear(); sc.hazards.length = 0; sc.fx.ground.length = 0;
     this.sprite.anims.stop(); this.sprite.setFrame(0).clearTint();
     this.aura.setAlpha(0);
-    sc.announce('Cavaleiro Sombrio derrotado!', 0xffe070);
+    sc.announce(this.data.name + ' derrotado!', 0xffe070);
     let n = 0;
     sc.time.addEvent({
       delay: 150, repeat: 15, callback: () => {
         n++;
         const x = this.x + rand(-55, 55), y = this.y + rand(-60, 50);
-        sc.fx.boom(x, y, rand(50, 110), 0xff3a3a, 'dark');
+        sc.fx.boom(x, y, rand(50, 110), this.data.deathColor ?? 0xff3a3a, this.data.particle || 'dark');
         sc.cameras.main.shake(130, 0.008);
-        this.sprite.setTintFill(n % 2 ? 0xffffff : 0xff2a2a);
+        this.sprite.setTintFill(n % 2 ? 0xffffff : (this.data.deathTint ?? 0xff2a2a));
         Sfx.play('boom');
       },
     });
     sc.tweens.add({ targets: [this.sprite, this.shadow], alpha: 0, delay: 1800, duration: 700 });
-    sc.time.delayedCall(2700, () => { sc.fx.boom(this.x, this.y, 240, 0xffffff, 'dark'); sc.onBossDefeated(); });
+    sc.time.delayedCall(2700, () => { sc.fx.boom(this.x, this.y, 240, 0xffffff, this.data.particle || 'dark'); sc.onBossDefeated(); });
   }
 
   // --- atualização por frame ---
   update(dt) {
     if (!this.alive) return;
-    const sc = this.scene, p = sc.player, D = BOSS, F = this.fury;
+    const sc = this.scene, p = sc.player, D = this.data, F = this.fury;
     const dx = p.x - this.x, dy = p.y - this.y;
     const dist = Math.hypot(dx, dy) || 1, nx = dx / dist, ny = dy / dist;
     this.contactCd -= dt; this.flash -= dt; this.atkCd -= dt; this.stateT -= dt; this.age += dt;
@@ -206,7 +208,7 @@ class Boss {
       case 'intro': {
         const k = 1 - Math.max(0, this.stateT) / 2.4;
         this.sprite.setAlpha(k); this.shadow.setAlpha(k * 0.9);
-        if (this.stateT > 0 && Math.random() < dt * 14) sc.fx.burst('dark', this.x + rand(-50, 50), this.y + rand(-10, 60), 2);
+        if (this.stateT > 0 && Math.random() < dt * 14) sc.fx.burst(D.particle || 'dark', this.x + rand(-50, 50), this.y + rand(-10, 60), 2);
         if (this.stateT <= 0) { this.invuln = false; this.go('chase'); this.atkCd = 0.8; }
         break;
       }
@@ -226,7 +228,7 @@ class Boss {
           this.ang = Math.atan2(dy, dx);
           if (this.stateT <= 0.55) {
             this.locked = true;
-            sc.fx.teleLine(this.x, this.y, this.ang, D.charge.speed * D.charge.dur + 40, this.radius * 1.7, Math.max(0.1, this.stateT), 0xff2a2a);
+            sc.fx.teleLine(this.x, this.y, this.ang, D.charge.speed * D.charge.dur + 40, this.radius * 1.7, Math.max(0.1, this.stateT), D.chargeColor ?? 0xff2a2a);
             Sfx.play('warn');
           }
         }
@@ -235,14 +237,14 @@ class Boss {
       case 'charge':
         speed = D.charge.speed; mx = Math.cos(this.ang); my = Math.sin(this.ang);
         this.trailT -= dt;
-        if (this.trailT <= 0) { this.trailT = 0.04; sc.fx.burst('dark', this.x, this.y + 24, 3); }
+        if (this.trailT <= 0) { this.trailT = 0.04; sc.fx.burst(D.particle || 'dark', this.x, this.y + 24, 3); }
         if (!this.hitDone && !p.dead && dist < this.radius + p.radius + 4) {
           if (p.takeDamage(D.charge.dmg * this.damageMul)) { this.hitDone = true; sc.fx.burst('blood', p.x, p.y, 10); }
         }
         if (this.stateT <= 0) {
           this.dashes--;
           if (this.dashes > 0) this.startCharge(true);
-          else { this.rest(D.charge.recover * (F ? 0.65 : 1)); sc.fx.ring(this.x, this.y, 20, 100, 0.3, 0x9a60ff, 3, 0.1); }
+          else { this.rest(D.charge.recover * (F ? 0.65 : 1)); sc.fx.ring(this.x, this.y, 20, 100, 0.3, D.recoverColor ?? 0x9a60ff, 3, 0.1); }
         }
         break;
       case 'wave_wind':
@@ -255,8 +257,8 @@ class Boss {
         if (this.stateT <= 0) this.go('chase');
         break;
       case 'fury':
-        if (Math.random() < dt * 9) sc.fx.ring(this.x, this.y, 20, rand(160, 300), 0.5, 0xff2a2a, 4, 0.12);
-        if (Math.random() < dt * 24) sc.fx.burst('blood', this.x + rand(-40, 40), this.y + rand(-50, 40), 2);
+        if (Math.random() < dt * 9) sc.fx.ring(this.x, this.y, 20, rand(160, 300), 0.5, D.furyColor ?? 0xff2a2a, 4, 0.12);
+        if (Math.random() < dt * 24) sc.fx.burst(D.furyParticle || 'blood', this.x + rand(-40, 40), this.y + rand(-50, 40), 2);
         if (this.stateT <= 0) { this.invuln = false; this.fury = true; this.go('chase'); this.atkCd = 0.4; }
         break;
     }
@@ -282,7 +284,7 @@ class Boss {
     this.aura.setPosition(this.x, this.y + 6);
     if (this.state !== 'intro') this.aura.setAlpha((F ? 0.5 : 0.22) + Math.sin(this.age * 5) * 0.06 + (this.state.indexOf('_wind') > 0 ? 0.2 : 0));
     if (this.flash > 0) this.sprite.setTintFill(0xffffff);
-    else if (F) this.sprite.setTint(0xff9a9a);
+    else if (F) this.sprite.setTint(D.furyTint ?? 0xff9a9a);
     else this.sprite.clearTint();
   }
 }

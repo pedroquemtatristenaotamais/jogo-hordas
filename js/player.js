@@ -144,13 +144,15 @@ class Player {
   }
 
   gainXp(n) {
+    if (this.level >= 100) return;
     this.xp += n;
-    while (this.xp >= this.xpNext) {
+    while (this.level < 100 && this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level++;
       this.xpNext = CONFIG.xpNeeded(this.level);
       this.scene.queueLevelUp();
     }
+    if (this.level >= 100) this.xp = 0;
   }
 
   hasPower(id) { return this.powers.find((p) => p.def.id === id); }

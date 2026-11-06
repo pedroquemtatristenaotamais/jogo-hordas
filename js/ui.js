@@ -25,6 +25,10 @@ class UIScene extends Phaser.Scene {
     this.txtBoss = mkText(this, W / 2, 600, 'CAVALEIRO SOMBRIO', 20, '#ff6a6a').setOrigin(0.5).setDepth(12).setVisible(false);
     this.ann = mkText(this, W / 2, 150, '', 32, '#ffffff', { strokeThickness: 6 }).setOrigin(0.5).setDepth(14).setAlpha(0);
     this.annT = 0;
+    this.txtStage = mkText(this, W / 2, 105, '', 12, '#b5c4c0').setOrigin(0.5).setDepth(12);
+    this.txtGate = mkText(this, W / 2, H - 165, '', 18, '#efd49b').setOrigin(0.5).setDepth(31).setVisible(false);
+    this.gateButton = mkButton(this, W / 2, H - 115, 360, 48, 'ENTRAR NO CASTELO', () => this.G.enterCastle(), { size: 22, depth: 30 });
+    this.gateButton.objs.forEach(o => o.setVisible(false));
     this.txtEvent = mkText(this, W / 2, 85, '', 12, '#a296b3').setOrigin(0.5).setDepth(12);
     this.txtDash = mkText(this, 20, H - 47, '', 14, '#c6dae8').setDepth(12);
     this.miniTexts = [0, 1].map(i => mkText(this, W / 2, 566 + i * 44, '', 15, '#d7b6ed').setOrigin(0.5).setDepth(12).setVisible(false));
@@ -85,10 +89,11 @@ class UIScene extends Phaser.Scene {
     g.clear();
 
     // XP e vida
-    this.bar(12, 6, W - 24, 18, p.xp / p.xpNext, 0x2a7ae8, 0x0e0b16);
+    this.bar(12, 6, W - 24, 18, p.level >= 100 ? 1 : p.xp / p.xpNext, 0x2a7ae8, 0x0e0b16);
     const low = p.hp / p.maxHp < 0.3;
     this.bar(48, 38, 250, 24, p.hp / p.maxHp, low && Math.floor(time / 180) % 2 ? 0xff5a5a : 0xd02a3a, 0x1a0a10);
-    this.setText(this.txtLvl, 'NV ' + p.level);
+    this.setText(this.txtLvl, 'NV ' + p.level + (p.level >= 100 ? ' MAX' : ''));
+    this.setText(this.txtStage, 'FASE ' + G.stage.number + '/2 • ' + G.stage.shortName.toUpperCase());
     this.setText(this.txtHp, Math.ceil(p.hp) + ' / ' + p.maxHp);
     this.setText(this.txtTime, fmtTime(G.t) + ' / ' + fmtTime(G.bossTime));
     this.setText(this.txtKills, 'Abates: ' + G.totalKills);
@@ -98,7 +103,7 @@ class UIScene extends Phaser.Scene {
     if (this.txtDbg) this.setText(this.txtDbg, 'FPS ' + Math.round(this.game.loop.actualFps) + '  inim. ' + G.enemies.alive + '  gemas ' + G.gems.items.filter((s) => s.live).length);
 
     const next = G.t < 300 ? 'Miniboss: 05:00' : G.t < 600 ? 'Miniboss: 10:00' : 'Chefe final: ' + fmtTime(G.bossTime);
-    this.setText(this.txtEvent, G.bossStarted ? 'A muralha exige sua última batalha' : next);
+    this.setText(this.txtEvent, G.stageCleared ? 'Passagem aberta • siga os lampiões ao norte ↑' : G.bossStarted ? G.stage.bossName : next);
     const cooldown = Math.max(0, p.dashCd || 0);
     const dashName = p.dashSmoke || p.smokeDash ? 'FUMAÇA' : 'DASH';
     this.setText(this.txtDash, dashName + ' Nv' + p.dashLevel + ' • ' + (cooldown > 0 ? cooldown.toFixed(1) + 's' : 'PRONTO') + '  [SHIFT / ESPAÇO]');
@@ -122,9 +127,16 @@ class UIScene extends Phaser.Scene {
     const pk = Object.keys(p.passives);
     for (let i = 0; i < pk.length; i++) { const x = 16 + i * 40; g.fillStyle(0x0e0b14, 0.9); g.fillRect(x, 128, 36, 36); g.lineStyle(2, 0x3a5a44, 1); g.strokeRect(x, 128, 36, 36); }
 
+    const nearGate = !!G.nearCastleGate();
+    const gateUi = nearGate && !this.lvlActive && !this.paused && !G.ended;
+    this.txtGate.setVisible(gateUi);
+    if (gateUi) this.setText(this.txtGate, G.transitioning ? 'Entrando no castelo…' : G.stageCleared ? 'Passagem liberada • E / ENTER ou toque' : 'Portão selado • derrote o guardião da floresta');
+    const canEnter = gateUi && G.stageCleared && !G.transitioning;
+    this.gateButton.objs.forEach(o => o.setVisible(canEnter));
+
     // chefe
     const b = G.boss;
-    if (b && (b.alive || b.state === 'dead')) {
+    if (b && !G.stageCleared && (b.alive || b.state === 'dead')) {
       const f = clamp(b.hp / b.maxHp, 0, 1);
       this.bossLag = Math.max(f, this.bossLag - dt * 0.35);
       const x = 340, y = 622, w = 600, h = 24;
@@ -132,9 +144,9 @@ class UIScene extends Phaser.Scene {
       g.fillStyle(0xffd0a0, 0.55); g.fillRect(x + 2, y + 2, (w - 4) * this.bossLag, h - 4);
       g.fillStyle(b.fury ? 0xff2a2a : 0xb01828, 1); g.fillRect(x + 2, y + 2, (w - 4) * f, h - 4);
       g.fillStyle(0xffffff, 0.18); g.fillRect(x + 2, y + 2, (w - 4) * f, 6);
-      g.fillStyle(0xffd070, 1); g.fillRect(x + 2 + (w - 4) * BOSS.furyAt - 1, y - 3, 2, h + 6);   // marca da fúria
+      g.fillStyle(0xffd070, 1); g.fillRect(x + 2 + (w - 4) * (b.data?.furyAt || BOSS.furyAt) - 1, y - 3, 2, h + 6);   // marca da fúria
       g.lineStyle(3, b.invuln ? 0x8a8aff : 0x000000, 1); g.strokeRect(x, y, w, h);
-      this.txtBoss.setVisible(true).setText(b.fury ? 'CAVALEIRO SOMBRIO — FÚRIA' : 'CAVALEIRO SOMBRIO').setColor(b.fury ? '#ff3a3a' : '#ff8a8a');
+      this.txtBoss.setVisible(true).setText(G.stage.bossName.toUpperCase() + (b.fury ? ' — FÚRIA' : '')).setColor(b.fury ? '#ff3a3a' : '#ff8a8a');
     } else this.txtBoss.setVisible(false);
 
     // aviso central
@@ -230,7 +242,7 @@ class UIScene extends Phaser.Scene {
   // ---------------------------------------------------------- pausa
   togglePause() {
     const G = this.G;
-    if (GamePortal.dialogOpen || G.ended || this.lvlActive || !G.player) return;
+    if (GamePortal.dialogOpen || G.transitioning || G.ended || this.lvlActive || !G.player) return;
     const W = CONFIG.width, H = CONFIG.height, O = this.pauseObjs;
     if (!this.paused) {
       this.paused = true;

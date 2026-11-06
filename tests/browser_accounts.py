@@ -12,10 +12,11 @@ sys.path.insert(0, str(ROOT))
 from server import create_server
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--forest', action='store_true', help='Conferir campanha Floresta→Castelo, cenário, encontros e transferência.')
 parser.add_argument('--expansion', action='store_true', help='Conferir poderes, evoluções, dash, encontros e dificuldades.')
 parser.add_argument('--controls', action='store_true', help='Conferir teclado e pausa após janelas de conta/ranking.')
 args = parser.parse_args()
-script = 'browser_expansion.cjs' if args.expansion else 'browser_portal_controls.cjs' if args.controls else 'browser_accounts.cjs'
+script = 'browser_forest.cjs' if args.forest else 'browser_expansion.cjs' if args.expansion else 'browser_portal_controls.cjs' if args.controls else 'browser_accounts.cjs'
 
 with tempfile.TemporaryDirectory(prefix='muralha-browser-') as folder:
     private = Path(folder) / 'dados'

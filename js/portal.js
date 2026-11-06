@@ -352,16 +352,23 @@
     }
     difficulty.value = scene('Game')?.difficultyId || game()?.registry.get('difficulty') || 'medium';
     filter.append(difficulty);
+    const stageFilter = element('label', 'portal-field', 'Percurso');
+    const stage = document.createElement('select'); stage.setAttribute('aria-label', 'Percurso do ranking');
+    for (const [id, name] of [['forest', 'Campanha — Floresta e Castelo'], ['castle', 'Castelo — fase isolada']]) {
+      const option = element('option', '', name); option.value = id; stage.append(option);
+    }
+    stage.value = scene('Game')?.startStageId || 'forest'; stageFilter.append(stage);
     let selectedSort = 'points';
     let serial = 0;
     difficulty.addEventListener('change', () => load(selectedSort));
+    stage.addEventListener('change', () => load(selectedSort));
     const load = async (sort) => {
       selectedSort = sort;
       const current = ++serial;
       for (const [key, tab] of tabs) tab.setAttribute('aria-pressed', String(key === sort));
       results.replaceChildren(element('p', 'portal-muted', 'Carregando ranking…'));
       try {
-        const data = await request(`/api/leaderboard?sort=${sort}&difficulty=${encodeURIComponent(difficulty.value)}`);
+        const data = await request(`/api/leaderboard?sort=${sort}&difficulty=${encodeURIComponent(difficulty.value)}&stage=${encodeURIComponent(stage.value)}`);
         if (serial !== current || !dialog.panel.isConnected) return;
         results.replaceChildren();
         if (!Array.isArray(data.entries) || !data.entries.length) { results.append(element('p', 'portal-empty', 'A muralha ainda espera seus primeiros recordistas.')); return; }
@@ -392,7 +399,7 @@
     for (const [key, label] of [['points', 'Pontos'], ['kills', 'Abates'], ['damage', 'Dano']]) {
       const tab = button(label, () => load(key)); tabs.push([key, tab]); switches.append(tab);
     }
-    dialog.body.append(filter, switches, results);
+    dialog.body.append(stageFilter, filter, switches, results);
     dialog.footer.append(button('Fechar', dialog.close));
     load('points');
     return dialog;
@@ -478,15 +485,18 @@
       offered = true;
       return this.ready.then(() => { if (!this.user) return this.openLogin(); });
     },
-    async beginRun(hero, practice = false, difficulty = 'medium') {
+    async beginRun(hero, practice = false, difficulty = 'medium', stage = 'castle') {
       await this.ready;
       if (!this.user) {
         // Convidados também recebem as regras atuais ao começar outra partida.
         if (online) { try { await refreshSession(); } catch (_) { /* Offline continua jogável. */ } }
-        if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings }, difficulty };
+        if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings }, difficulty, stage };
       }
-      try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice, difficulty } }); }
+      try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice, difficulty, stage } }); }
       catch (error) { this.notice(error.message); return { run_id: null, ranked: false }; }
+    },
+    async advanceRun(runId) {
+      return request('/api/runs/advance', { method: 'POST', body: { run_id: runId } });
     },
     async finishRun(payload) {
       if (!payload?.run_id || !this.user) return { saved: false, ranked: false, points: 0 };

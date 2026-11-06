@@ -7,7 +7,7 @@ class DifficultyScene extends Phaser.Scene {
     menuBackdrop(this);
     this.add.image(W / 2, 360, 'vignette').setDepth(4).setAlpha(0.9);
     mkText(this, W / 2, 64, 'ESCOLHA SEU DESAFIO', 42, '#e6d6a8').setOrigin(0.5).setDepth(10);
-    mkText(this, W / 2, 113, '15 minutos • minibosses aos 5 e 10 • Cavaleiro Sombrio aos 15', 18, '#b8acc7').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 113, 'Floresta → Castelo • 15 min por fase • minibosses aos 5 e 10', 18, '#b8acc7').setOrigin(0.5).setDepth(10);
     this.going = false;
     this.ids = Object.keys(DIFFICULTIES);
     this.sel = Math.max(0, this.ids.indexOf(this.registry.get('difficulty') || 'medium'));
@@ -47,6 +47,6 @@ class DifficultyScene extends Phaser.Scene {
     this.registry.set('difficulty', difficulty);
     Sfx.play('ui');
     this.cameras.main.fadeOut(250);
-    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Game', { char: this.charId, difficulty }));
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Game', { char: this.charId, difficulty, stage: new URLSearchParams(location.search).get('stage') || 'forest' }));
   }
 }

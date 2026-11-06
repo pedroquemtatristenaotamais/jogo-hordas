@@ -118,7 +118,7 @@ class EnemyManager {
     this.scene = scene;
     this.pool = [];
     for (let i = 0; i < CONFIG.maxEnemies; i++) this.pool.push(new Enemy(scene));
-    this.ids = Object.keys(ENEMIES);
+    this.ids = scene.stage?.enemyIds || Object.keys(ENEMIES).filter(id => ENEMIES[id].stage !== 'forest');
     this.counts = {};
     this.alive = 0;
     this.summoned = 0;
@@ -144,7 +144,7 @@ class EnemyManager {
     const d = ENEMIES[typeId], art = ENEMY_ART[typeId];
     e.def = d; e.id = typeId; e.uid = ENEMY_UID++;
     e.alive = true; e.x = x; e.y = y; e.radius = d.radius;
-    e.maxHp = e.hp = d.hp * (hpMul || 1) * this.scene.difficulty.hpMul;
+    e.maxHp = e.hp = d.hp * (hpMul || 1) * this.scene.difficulty.hpMul * (this.scene.stageHpMul ?? 1);
     e.isMiniBoss = false; e.isBoss = false; e.miniIndex = 0; e.miniRewarded = false;
     e.slowUntil = 0; e.slowFactor = 1; e.spiralCd = 2;
     e.kx = 0; e.ky = 0; e.flash = 0;
@@ -199,7 +199,7 @@ class EnemyManager {
       }
       this.weights[i] = w; total += w;
     }
-    if (total <= 0) return 'skel_warrior';
+    if (total <= 0) return this.ids[0];
     let r = Math.random() * total;
     for (let i = 0; i < this.ids.length; i++) { r -= this.weights[i]; if (r <= 0) return this.ids[i]; }
     return this.ids[0];
@@ -220,8 +220,9 @@ class EnemyManager {
 
   director(dt) {
     const sc = this.scene, t = sc.t;
-    while (this.eventIdx < EVENTS.length && t >= EVENTS[this.eventIdx].t) this.runEvent(EVENTS[this.eventIdx++]);
-    const rate = (CONFIG.spawn.baseRate + t * CONFIG.spawn.growth) * sc.difficulty.spawnMul;
+    const events = sc.stage?.events || EVENTS;
+    while (this.eventIdx < events.length && t >= events[this.eventIdx].t) this.runEvent(events[this.eventIdx++]);
+    const rate = (CONFIG.spawn.baseRate + t * CONFIG.spawn.growth) * sc.difficulty.spawnMul * (sc.stageSpawnMul ?? 1);
     const cap = Math.min(this.ordinaryCapacity(), (28 + t * 0.4) * sc.difficulty.capMul);
     this.acc += rate * dt;
     let guard = 18;
@@ -296,6 +297,7 @@ class EnemyManager {
     let dx = p.x - e.x, dy = p.y - e.y;
     const dist = Math.hypot(dx, dy) || 1;
     const nx = dx / dist, ny = dy / dist;
+    if (d.ambush) e.sprite.setAlpha(e.state === 'chase' && dist > 210 ? .48 : 1);
     e.atkCd -= dt; e.shellCd -= dt; e.contactCd -= dt; e.chargeCd -= dt;
     // vira devagar na direção do jogador (usado pelo bloqueio do escudo)
     const want = Math.atan2(ny, nx);
@@ -334,11 +336,11 @@ class EnemyManager {
         }
         // artilheiro: marca uma área no chão
         if (sc.spawningEnabled && !sc.ended && !sc.bossStarted && d.shell && e.shellCd <= 0 && dist < d.shell.range) {
-          sc.addHazard({ shape: 'circle', x: p.x, y: p.y, r: d.shell.radius, delay: d.shell.delay, dmg: d.shell.dmg * dmgScale, col: d.poison ? 0x91d442 : d.storm ? 0x8edfff : 0xff8a30 });
+          sc.addHazard({ shape: 'circle', x: p.x, y: p.y, r: d.shell.radius, delay: d.shell.delay, dmg: d.shell.dmg * dmgScale, col: d.shell.col ?? (d.poison ? 0x91d442 : d.storm ? 0x8edfff : 0xff8a30), kind:d.shell.kind });
           if (e.isMiniBoss && d.storm) {
             for (let i=0;i<4;i++) { const a=i*Math.PI/2+e.phase; sc.addHazard({shape:'circle',x:p.x+Math.cos(a)*110,y:p.y+Math.sin(a)*110,r:48,delay:1.45,dmg:d.shell.dmg*dmgScale,col:0x8edfff}); }
           }
-          sc.fx.burst('fire', e.x + (e.sprite.flipX ? -20 : 20), e.y - 6, 6);
+          sc.fx.burst(d.stage === 'forest' ? 'bone' : 'fire', e.x + (e.sprite.flipX ? -20 : 20), e.y - 6, 6);
           e.shellCd = d.shell.cd * rand(0.9, 1.15);
         }
         // invocador
@@ -357,7 +359,7 @@ class EnemyManager {
         // ceifador: golpe em arco telegrafado
         if (d.sweep && e.atkCd <= 0 && dist < d.sweep.range) {
           const ang = Math.atan2(dy, dx);
-          sc.addHazard({ shape: 'cone', x: e.x, y: e.y, ang, r: d.sweep.range + 25, half: d.sweep.half, delay: d.sweep.windup, dmg: d.sweep.dmg * dmgScale, col: 0xff3a8a });
+          sc.addHazard({ shape: 'cone', x: e.x, y: e.y, ang, r: d.sweep.range + 25, half: d.sweep.half, delay: d.sweep.windup, dmg: d.sweep.dmg * dmgScale, col: d.sweep.col ?? 0xff3a8a });
           e.state = 'cast'; e.stateT = d.sweep.windup + 0.25;
           e.atkCd = d.sweep.cd;
         }
@@ -366,7 +368,7 @@ class EnemyManager {
         if (ch && e.chargeCd <= 0 && dist < ch.range && dist > ch.min) {
           e.state = 'windup'; e.stateT = ch.windup;
           e.cdx = nx; e.cdy = ny;
-          sc.fx.teleLine(e.x, e.y, Math.atan2(ny, nx), d.speed * ch.mul * ch.dur * 0.95, d.radius * 1.6, ch.windup, 0xff4040);
+          sc.fx.teleLine(e.x, e.y, Math.atan2(ny, nx), d.speed * ch.mul * ch.dur * 0.95, d.radius * 1.6, ch.windup, ch.col ?? 0xff4040);
         }
         break;
       }

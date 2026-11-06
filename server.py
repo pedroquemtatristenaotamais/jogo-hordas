@@ -38,6 +38,7 @@ SETTING_LIMITS = {
     'maxEnemies': (1, 240, True),
 }
 DIFFICULTY_SCORES = {'easy': 0.75, 'medium': 1.0, 'hard': 1.5, 'hardcore': 2.5}
+STAGES = frozenset(('forest', 'castle'))
 HEROES = frozenset(('vanguard', 'ranger', 'mage'))
 POWERS = frozenset(('slash', 'arrows', 'arcane', 'blades', 'lightning',
                     'fireball', 'orbs', 'pierce', 'burst', 'axes', 'frost', 'poison',
@@ -50,6 +51,8 @@ ENEMIES = frozenset((
     'reaper', 'elite_knight', 'gargoyle', 'gunner', 'necromancer', 'stone_golem',
     'giant_skeleton', 'dark_beast', 'storm_caller', 'poisoner', 'frost_wraith',
     'hell_charger', 'storm_warden', 'crypt_lord',
+    'forest_wolf', 'forest_spider', 'forest_wisp', 'forest_bandit', 'forest_rootling',
+    'forest_moth', 'forest_druid', 'forest_stalker', 'forest_matriarch', 'forest_huntsman',
 ))
 EMPTY_COMMANDS = frozenset(('heal', 'boss', 'clear', 'maxpowers', 'killboss'))
 STAT_LIMITS = {
@@ -208,6 +211,7 @@ class GameApplication:
                     started_at REAL NOT NULL, finished_at REAL,
                     state TEXT NOT NULL DEFAULT 'started' CHECK(state IN ('started','finished','abandoned')),
                     settings_json TEXT NOT NULL, session_hash TEXT, difficulty TEXT NOT NULL DEFAULT 'medium',
+                    start_stage TEXT NOT NULL DEFAULT 'castle', current_stage TEXT NOT NULL DEFAULT 'castle', advanced_at REAL,
                     kills INTEGER, damage REAL, duration REAL, level INTEGER,
                     victory INTEGER, points INTEGER
                 );
@@ -227,6 +231,10 @@ class GameApplication:
                 db.execute('ALTER TABLE runs ADD COLUMN session_hash TEXT')
             if 'difficulty' not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'medium'")
+            for name, declaration in (('start_stage', "TEXT NOT NULL DEFAULT 'castle'"),
+                                      ('current_stage', "TEXT NOT NULL DEFAULT 'castle'"), ('advanced_at', 'REAL')):
+                if name not in columns:
+                    db.execute(f'ALTER TABLE runs ADD COLUMN {name} {declaration}')
             db.execute("UPDATE runs SET state='abandoned',ranked=0 WHERE state='started' AND session_hash IS NULL")
             db.execute('CREATE INDEX IF NOT EXISTS run_session ON runs(session_hash,state)')
             db.execute('INSERT OR IGNORE INTO settings(id,value_json) VALUES(1,?)',
@@ -359,15 +367,19 @@ class GameApplication:
                     difficulty = query.get('difficulty', ['medium'])
                     if len(difficulty) != 1 or difficulty[0] not in DIFFICULTY_SCORES:
                         raise APIError(400, 'Dificuldade inválida.')
+                    stages = query.get('stage', [None])
+                    if len(stages) != 1 or stages[0] is not None and stages[0] not in STAGES:
+                        raise APIError(400, 'Fase inválida.')
+                    stage = stages[0]
                     column = sort[0]  # Somente os três identificadores permitidos acima.
                     rows = db.execute(f'''WITH best AS (
                         SELECT u.username,r.*,
                         ROW_NUMBER() OVER (PARTITION BY r.user_id
                             ORDER BY r.{column} DESC,r.points DESC,r.kills DESC,r.damage DESC,r.finished_at ASC,r.id ASC) AS place
                         FROM runs r JOIN users u ON u.id=r.user_id
-                        WHERE r.state='finished' AND r.ranked=1 AND u.role='player' AND u.banned=0 AND r.difficulty=?
-                    ) SELECT username,points,kills,damage,duration,hero,victory,difficulty FROM best WHERE place=1
-                    ORDER BY {column} DESC,points DESC,kills DESC,damage DESC,username ASC LIMIT 50''', (difficulty[0],)).fetchall()
+                        WHERE r.state='finished' AND r.ranked=1 AND u.role='player' AND u.banned=0 AND r.difficulty=? AND (? IS NULL OR r.start_stage=?)
+                    ) SELECT username,points,kills,damage,duration,hero,victory,difficulty,start_stage AS stage,current_stage AS reached_stage FROM best WHERE place=1
+                    ORDER BY {column} DESC,points DESC,kills DESC,damage DESC,username ASC LIMIT 50''', (difficulty[0], stage, stage)).fetchall()
                     entries = []
                     for rank, row in enumerate(rows, 1):
                         entry = dict(row)
@@ -437,7 +449,10 @@ class GameApplication:
                         self.audit(db, user, 'password', {}, user['id'])
                         result = {'ok': True}
                     elif method == 'POST' and path == '/api/runs/start':
-                        require_fields(body, ('hero', 'practice'), ('difficulty',))
+                        require_fields(body, ('hero', 'practice'), ('difficulty', 'stage'))
+                        stage = body.get('stage', 'castle')
+                        if not isinstance(stage, str) or stage not in STAGES:
+                            raise APIError(400, 'Fase inválida.')
                         difficulty = body.get('difficulty', 'medium')
                         if not isinstance(difficulty, str) or difficulty not in DIFFICULTY_SCORES:
                             raise APIError(400, 'Dificuldade inválida.')
@@ -450,9 +465,28 @@ class GameApplication:
                         ranked = user['role'] == 'player' and not practice and settings == DEFAULT_SETTINGS
                         run_id = secrets.token_urlsafe(24)
                         db.execute("UPDATE runs SET state='abandoned' WHERE user_id=? AND state='started'", (user['id'],))
-                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json,session_hash,difficulty)
-                            VALUES(?,?,?,?,?,?,?,?,?)''', (run_id, user['id'], hero, int(practice), int(ranked), time.time(), json.dumps(settings), user['token_hash'], difficulty))
-                        result = {'run_id': run_id, 'ranked': ranked, 'settings': settings, 'difficulty': difficulty}
+                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,settings_json,session_hash,difficulty,start_stage,current_stage)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?)''', (run_id, user['id'], hero, int(practice), int(ranked), time.time(), json.dumps(settings), user['token_hash'], difficulty, stage, stage))
+                        result = {'run_id': run_id, 'ranked': ranked, 'settings': settings, 'difficulty': difficulty, 'stage': stage}
+                    elif method == 'POST' and path == '/api/runs/advance':
+                        require_fields(body, ('run_id',))
+                        run_id = body['run_id']
+                        if not isinstance(run_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{32}', run_id):
+                            raise APIError(400, 'Partida inválida.')
+                        run = db.execute('SELECT * FROM runs WHERE id=? AND user_id=?', (run_id, user['id'])).fetchone()
+                        if not run:
+                            raise APIError(404, 'Partida não encontrada.')
+                        if run['state'] != 'started' or not run['session_hash'] or not hmac.compare_digest(run['session_hash'], user['token_hash']):
+                            raise APIError(409, 'Esta partida terminou ou pertence a outra sessão.')
+                        if run['start_stage'] != 'forest':
+                            raise APIError(400, 'Esta partida já começou no castelo.')
+                        # Idempotência permite repetir uma resposta perdida sem avançar duas vezes.
+                        if run['current_stage'] == 'forest':
+                            settings = json.loads(run['settings_json'])
+                            if run['ranked'] and time.time() - run['started_at'] + 10 < settings['bossTime']:
+                                raise APIError(400, 'A floresta ainda não foi concluída.')
+                            db.execute("UPDATE runs SET current_stage='castle',advanced_at=? WHERE id=?", (time.time(), run_id))
+                        result = {'stage': 'castle', 'run_id': run_id}
                     elif method == 'POST' and path == '/api/runs/finish':
                         require_fields(body, ('run_id', 'kills', 'damage', 'duration', 'hero', 'level', 'victory'))
                         run_id = body['run_id']
@@ -479,8 +513,11 @@ class GameApplication:
                         if kills > duration * 60 + 240 or damage > duration * 50_000 + 10_000:
                             raise APIError(400, 'Estatísticas fora dos limites plausíveis.')
                         settings = json.loads(run['settings_json'])
-                        if victory and duration + 1 < settings['bossTime']:
-                            raise APIError(400, 'Vitória antes do surgimento do chefe.')
+                        required = settings['bossTime'] * (2 if run['start_stage'] == 'forest' else 1)
+                        if victory and (duration + 1 < required or run['current_stage'] != 'castle'):
+                            raise APIError(400, 'Vitória antes de concluir as fases e o chefe final.')
+                        if victory and run['start_stage'] == 'forest' and (run['advanced_at'] is None or run['ranked'] and now - run['advanced_at'] + 1 < settings['bossTime']):
+                            raise APIError(400, 'O chefe do castelo ainda não poderia ter surgido.')
                         base_points = kills * 100 + math.floor(damage) * 2 + math.floor(duration) * 10 + (5000 if victory else 0)
                         points = math.floor(base_points * DIFFICULTY_SCORES[run['difficulty']])
                         ranked = bool(run['ranked'] and user['role'] == 'player')

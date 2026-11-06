@@ -10,7 +10,7 @@ const CONFIG = {
     author: 'Kaike Oliveira Cabral Araújo',
     school: 'Aluno do Colégio Estadual Barbosa Ferraz',
     course: 'Curso: 2º DS',
-    description: 'Três guerreiros chegam à muralha da vila, mas só um poderá entrar no castelo para derrotar o monstro que assombra a região: o Cavaleiro Sombrio. Sobreviva às hordas, fique mais forte a cada nível e enfrente o chefe.',
+    description: 'Três guerreiros precisam atravessar a Floresta dos Esquecidos para chegar ao castelo. Siga os lampiões, sobreviva às criaturas da noite e enfrente os guardiões do caminho até o Cavaleiro Sombrio.',
     wish: 'Desejo a você uma ótima experiência de jogo!',
     okAfterMs: 5200,    // quando o botão OK aparece
     autoMs: 15000,      // segue sozinho depois desse tempo

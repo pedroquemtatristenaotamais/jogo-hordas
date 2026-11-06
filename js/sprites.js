@@ -686,6 +686,8 @@ function drawMenuVillager(P, f, id) {
 
 // ---------------- Geração de tudo + animações ----------------
 SPR.generateAll = function (scene) {
+  drawForestAssets(scene);
+  drawForestBossAssets(scene);
   drawProgressionAssets(scene);
   drawDashAssets(scene);
   drawRefinedProjectiles(scene);
@@ -707,7 +709,8 @@ SPR.generateAll = function (scene) {
   SPR.make(scene, 'boss', 32, 32, 4, 4, drawRefinedBoss);
   for (const id of Object.keys(ENEMY_ART)) {
     const a = ENEMY_ART[id];
-    if (a.fn === humanoid || a.fn === drawGolem) {
+    if (a.custom) SPR.make(scene, 'e_' + id, a.w, a.h, a.frames || 4, a.k, a.fn);
+    else if (a.fn === humanoid || a.fn === drawGolem) {
       a.visualScale = a.w * a.k / 48;
       SPR.make(scene, 'e_' + id, 24, 24, 4, 2, (P, f) => a.fn === humanoid ? drawRefinedHumanoid(P, f, a.o) : drawRefinedGolem(P, f, a.o));
     } else SPR.make(scene, 'e_' + id, a.w, a.h, 2, a.k, (P, f) => drawRefinedCreature(P, f, a));
@@ -717,7 +720,7 @@ SPR.generateAll = function (scene) {
     scene.anims.create({ key, frames: frames.map((f) => ({ key: tex, frame: f })), frameRate: rate, repeat: -1 });
   };
   for (const id of Object.keys(CHARACTERS)) mkAnim('walk_' + id, 'c_' + id, [0, 1, 2, 3], 8);
-  for (const id of Object.keys(ENEMY_ART)) mkAnim('walk_e_' + id, 'e_' + id, (ENEMY_ART[id].fn === humanoid || ENEMY_ART[id].fn === drawGolem) ? [0, 1, 2, 3] : [0, 1], 4 + Math.min(6, (ENEMIES[id].speed / 25)));
+  for (const id of Object.keys(ENEMY_ART)) mkAnim('walk_e_' + id, 'e_' + id, (ENEMY_ART[id].custom || ENEMY_ART[id].fn === humanoid || ENEMY_ART[id].fn === drawGolem) ? [0, 1, 2, 3] : [0, 1], 4 + Math.min(6, (ENEMIES[id].speed / 25)));
   mkAnim('boss_walk', 'boss', [0, 1], 4);
   mkAnim('flame', 'flame', [0, 1, 2, 3], 9);
 };

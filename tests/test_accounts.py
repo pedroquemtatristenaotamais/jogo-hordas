@@ -250,6 +250,47 @@ class BackendTests(unittest.TestCase):
         self.httpd.app.initialize()
         self.assertEqual(self.request('/api/session')[1]['settings']['bossTime'], 30)
 
+    def test_campaign_stage_advance_and_final_victory(self):
+        self.register()
+        status, run, _ = self.request('/api/runs/start', {'hero':'vanguard','practice':False,'stage':'forest'})
+        self.assertEqual(status,200,run)
+        self.assertEqual(run['stage'],'forest')
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':run['run_id']})[0],400)
+        self.age(run['run_id'],901)
+        self.assertEqual(self.finish(run['run_id'],duration=900,victory=True)[0],400)
+        status,advanced,_=self.request('/api/runs/advance',{'run_id':run['run_id']})
+        self.assertEqual((status,advanced['stage']),(200,'castle'))
+        with self.httpd.app.connect() as db:
+            first=db.execute('SELECT advanced_at FROM runs WHERE id=?',(run['run_id'],)).fetchone()[0]
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':run['run_id']})[0],200)
+        with self.httpd.app.connect() as db:
+            self.assertEqual(db.execute('SELECT advanced_at FROM runs WHERE id=?',(run['run_id'],)).fetchone()[0],first)
+        self.assertEqual(self.finish(run['run_id'],duration=900,victory=True)[0],400)
+        self.age(run['run_id'],901)
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE runs SET advanced_at=advanced_at-901 WHERE id=?',(run['run_id'],))
+        self.assertEqual(self.finish(run['run_id'],duration=1801,victory=True)[0],200)
+        rows=self.request('/api/leaderboard?stage=forest')[1]['entries']
+        self.assertEqual((len(rows),rows[0]['stage']),(1,'forest'))
+        self.assertEqual(self.request('/api/leaderboard?stage=castle')[1]['entries'],[])
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':run['run_id']})[0],409)
+
+    def test_campaign_stage_validation_and_practice(self):
+        self.register()
+        self.assertEqual(self.request('/api/runs/start',{'hero':'mage','practice':False,'stage':'bogus'})[0],400)
+        self.assertEqual(self.request('/api/leaderboard?stage=bogus')[0],400)
+        self.assertEqual(self.request('/api/leaderboard?stage=forest&stage=castle')[0],400)
+        legacy=self.start()
+        self.assertEqual(legacy['stage'],'castle')
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':legacy['run_id']})[0],400)
+        status,run,_=self.request('/api/runs/start',{'hero':'mage','practice':True,'stage':'forest'})
+        self.assertEqual(status,200,run)
+        self.assertFalse(run['ranked'])
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':run['run_id']})[0],200)
+        self.request('/api/logout',{})
+        self.request('/api/login',{'username':'PlayerOne','password':'SamplePass!2026'})
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':run['run_id']})[0],409)
+
     def test_run_start_returns_authoritative_settings_snapshot(self):
         self.admin()
         settings={'healthDropChance':.2,'bossTime':30,'spawnBaseRate':1,'spawnGrowth':.01,'maxEnemies':120}

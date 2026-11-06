@@ -8,6 +8,10 @@ class GameScene extends Phaser.Scene {
 
   init(data = {}) {
     this.charId = CHARACTERS[data.char] ? data.char : 'vanguard';
+    this.carry = data.carry || null;
+    this.stageId = resolveStage(data.stage).id;
+    this.stage = resolveStage(this.stageId);
+    this.startStageId = this.carry?.startStageId || this.stageId;
     this.difficultyId = resolveDifficulty(data.difficulty || this.registry.get('difficulty') || 'medium').id;
     this.difficulty = resolveDifficulty(this.difficultyId);
   }
@@ -19,11 +23,12 @@ class GameScene extends Phaser.Scene {
     this.initialization = initialization;
     this.events.once('shutdown', () => { if (this.initialization === initialization) this.initialization = null; });
     const q = new URLSearchParams(location.search);
-    const practice = GamePortal.isAdmin || ['god', 't', 'boss'].some(key => q.has(key));
-    const run = await GamePortal.beginRun(this.charId, practice, this.difficultyId).catch(error => ({ error: error.message }));
+    const practice = GamePortal.isAdmin || !!this.carry?.practice || ['god', 't', 'boss', 'stage'].some(key => q.has(key));
+    const run = this.carry ? this.carry.run : await GamePortal.beginRun(this.charId, practice, this.difficultyId, this.stageId).catch(error => ({ error: error.message }));
     if (this.initialization !== initialization) return;
     this.runStart = Promise.resolve(run);
     this.isPractice = practice || !!run?.run_id && !run.ranked;
+    if (!this.carry && run?.stage) { this.stageId = resolveStage(run.stage).id; this.stage = resolveStage(this.stageId); this.startStageId = this.stageId; }
     this.difficultyId = resolveDifficulty(run?.difficulty || this.difficultyId).id;
     this.difficulty = resolveDifficulty(this.difficultyId);
     this.buildScene(run?.settings || GamePortal.settings || {});
@@ -33,7 +38,7 @@ class GameScene extends Phaser.Scene {
   buildScene(settings) {
     // Parâmetros de URL (para testes): ?boss=30 &god &debug &t=200 &char=mage
     const q = new URLSearchParams(location.search);
-    this.godMode = q.has('god');
+    this.godMode = q.has('god') || !!this.carry?.godMode;
     this.debug = q.has('debug');
     this.bossTime = q.has('boss') ? parseFloat(q.get('boss')) : CONFIG.bossTime;
 
@@ -46,14 +51,22 @@ class GameScene extends Phaser.Scene {
     if (!q.has('boss')) this.bossTime = CONFIG.bossTime;
 
     // Estado da partida (tudo reiniciado aqui)
-    this.t = q.has('t') ? parseFloat(q.get('t')) : 0;
-    this.totalKills = 0;
-    this.totalDamage = 0;
+    this.t = !this.carry && q.has('t') ? parseFloat(q.get('t')) : 0;
+    this.visualTime = this.t;
+    this.elapsedBefore = this.carry?.elapsed || 0;
+    this.totalKills = this.carry?.kills || 0;
+    this.totalDamage = this.carry?.damage || 0;
+    this.stageHpMul = this.carry ? 1.8 : 1;
+    this.stageSpawnMul = this.carry ? 1.15 : 1;
+    this.stageDamageMul = this.carry ? 1.2 : 1;
+    this.saveError = this.carry?.saveError || null;
+    this.stageCleared = false;
+    this.transitioning = false;
     this.runSubmission = null;
     this.ended = false;
     this.levelUpOpen = false;
     this.chestOpen = false;
-    this.pendingLevels = 0;
+    this.pendingLevels = this.carry?.pendingLevels || 0;
     this.lastOffer = [];
     this.spawningEnabled = true;
     this.bossStarted = false;
@@ -64,19 +77,22 @@ class GameScene extends Phaser.Scene {
     this.tmpA = []; this.tmpB = []; this.tmpC = []; this.tmpE = [];
 
     this.cameras.main.setBackgroundColor('#07060a');
-    this.world = new World(this);
+    this.world = this.stageId === 'forest' ? new ForestWorld(this) : new World(this);
     this.grid = new Grid(64);
     this.fx = new FX(this);
 
     const def = CHARACTERS[this.charId];
     this.player = new Player(this, def, CONFIG.player.start.x, CONFIG.player.start.y);
-    this.player.addPower(def.startPower);
+    if (this.carry) restorePlayerState(this.player, this.carry.player);
+    else this.player.addPower(def.startPower);
 
     this.pShots = new PlayerShots(this);
     this.enemyShots = new EnemyShots(this);
     this.gems = new Gems(this);
     this.enemies = new EnemyManager(this);
     this.progression = new ProgressionSystem(this);
+    this.progression.consumed = new Set(this.carry?.consumed || []);
+    this.progression.completed = new Set(this.carry?.completed || []);
     this.encounters = new EncounterDirector(this);
 
     // Câmera
@@ -90,11 +106,11 @@ class GameScene extends Phaser.Scene {
     this.add.particles(0, 0, 'px', {
       x: { min: 0, max: CONFIG.width }, y: { min: 0, max: CONFIG.height }, speedY: { min: -26, max: -8 }, speedX: { min: -10, max: 10 },
       lifespan: 4500, scale: { start: 0.85, end: 0 }, alpha: { start: 0.5, end: 0 },
-      tint: [0xff8a20, 0xffd070], frequency: 160, blendMode: 'ADD',
+      tint: this.stageId === 'forest' ? [0x9dbba9, 0xe0d8b1] : [0xff8a20, 0xffd070], frequency: this.stageId === 'forest' ? 360 : 160, blendMode: 'ADD',
     }).setScrollFactor(0).setDepth(9400);
 
     // Controles
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,SPACE');
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,SPACE,E,ENTER');
     this.joy = { active: false, ox: 0, oy: 0, x: 0, y: 0 };
     this.joyG = this.add.graphics().setScrollFactor(0).setDepth(99999);
     this.input.on('pointerdown', (p) => {
@@ -111,7 +127,7 @@ class GameScene extends Phaser.Scene {
     this.scene.launch('UI', { game: this });
     this.events.once('shutdown', () => { this.game.scene.stop('UI'); });
 
-    this.time.delayedCall(900, () => this.announce(this.difficulty.name + ' • minibosses aos 5 e 10 min • chefe aos ' + Math.round(this.bossTime / 60 * 10) / 10 + ' min', this.difficulty.color));
+    this.time.delayedCall(900, () => this.announce('Fase ' + this.stage.number + ' — ' + this.stage.shortName, this.stage.color));
   }
 
   // ---------------------------------------------------------- utilidades usadas por poderes/inimigos
@@ -119,7 +135,8 @@ class GameScene extends Phaser.Scene {
     const ui = this.scene.get('UI');
     if (ui && ui.ready) ui.announce(msg, color);
   }
-  dmgScale() { return 1 + (this.t / 60) * CONFIG.spawn.dmgPerMinute; }
+  dmgScale() { return (1 + (this.t / 60) * CONFIG.spawn.dmgPerMinute) * this.stageDamageMul; }
+  get totalTime() { return this.elapsedBefore + this.t; }
 
   // Inimigos vivos dentro de um círculo (usa a grade espacial)
   queryEnemies(x, y, r, out) {
@@ -289,17 +306,57 @@ class GameScene extends Phaser.Scene {
     const p = this.player;
     p.x = A.x; p.y = A.y + 360;
     p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.5);
-    this.boss = new Boss(this, A.x, A.y - 170);
+    this.boss = this.stageId === 'forest' ? new ForestBoss(this, A.x, A.y - 170) : new Boss(this, A.x, A.y - 170);
     this.cameras.main.zoomTo(0.85, 1400);
-    this.announce('O Cavaleiro Sombrio desperta!', 0xff3a3a);
+    this.announce(this.stage.bossName + ' desperta!', this.stage.color);
   }
 
   onBossDefeated() {
     if (this.ended) return;
+    if (this.stage.next) {
+      if (this.stageCleared) return;
+      this.stageCleared = true;
+      this.enemyShots.clear(); this.hazards.length = 0;
+      this.gems.magnetAll();
+      this.world.openCastleGate();
+      this.cameras.main.zoomTo(1, 1000);
+      this.announce('O portão foi aberto! Siga os lampiões ao norte.', 0xffdc9c);
+      Sfx.play('levelup');
+      return;
+    }
     this.ended = true;
     this.gems.magnetAll();
     Sfx.play('win');
     this.time.delayedCall(900, () => this.showEnd(true));
+  }
+
+  nearCastleGate() {
+    const gate = this.world?.gate;
+    return this.stageId === 'forest' && gate && Math.hypot(this.player.x - gate.x, this.player.y - gate.y) <= 150;
+  }
+
+  async enterCastle() {
+    const ui = this.scene.get('UI');
+    if (!this.gameReady || !this.scene.isActive() || this.ended || this.transitioning || !this.stageCleared || !this.world.gateOpen || !this.nearCastleGate() || this.levelUpOpen || this.chestOpen || ui?.paused || GamePortal.dialogOpen) return false;
+    this.transitioning = true;
+    const initialization = this.initialization;
+    const carry = {
+      player: capturePlayerState(this.player), elapsed: this.totalTime,
+      kills: this.totalKills, damage: this.totalDamage, pendingLevels: this.pendingLevels,
+      consumed: [...this.progression.consumed], completed: [...this.progression.completed],
+      startStageId: this.startStageId, practice: this.isPractice, godMode: this.godMode,
+      saveError: this.saveError, run: await this.runStart,
+    };
+    try {
+      if (carry.run?.run_id && !carry.saveError) await GamePortal.advanceRun(carry.run.run_id);
+    } catch (error) {
+      carry.practice = true;
+      carry.saveError = 'A passagem não foi registrada no servidor. Esta campanha segue fora do ranking.';
+      GamePortal.notice(carry.saveError);
+    }
+    if (this.initialization !== initialization || this.ended) return false;
+    this.scene.restart({ char: this.charId, difficulty: this.difficultyId, stage: 'castle', carry });
+    return true;
   }
 
   onPlayerDeath() {
@@ -315,13 +372,14 @@ class GameScene extends Phaser.Scene {
   }
 
   get points() {
-    const base = this.totalKills * 100 + Math.floor(this.totalDamage) * 2 + Math.floor(this.t) * 10 + (this.boss && !this.boss.alive ? 5000 : 0);
+    const base = this.totalKills * 100 + Math.floor(this.totalDamage) * 2 + Math.floor(this.totalTime) * 10 + (this.stageId === 'castle' && this.boss && !this.boss.alive ? 5000 : 0);
     return Math.floor(base * this.difficulty.scoreMul);
   }
 
   submitResult(win) {
     if (this.runSubmission) return this.runSubmission;
-    const stats = { kills: this.totalKills, damage: this.totalDamage, duration: this.t, hero: this.charId, level: this.player.level, victory: win };
+    if (this.saveError) return this.runSubmission = Promise.resolve({ error: this.saveError });
+    const stats = { kills: this.totalKills, damage: this.totalDamage, duration: this.totalTime, hero: this.charId, level: this.player.level, victory: win };
     this.runSubmission = Promise.resolve(this.runStart).then(run => {
       if (run?.error) return { error: run.error };
       if (!run?.run_id) return { saved: false, ranked: false };
@@ -333,7 +391,7 @@ class GameScene extends Phaser.Scene {
   showEnd(win) {
     const submission = this.submitResult(win);
     this.scene.launch('End', {
-      win, time: this.t, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId, difficulty: this.difficultyId,
+      win, time: this.totalTime, stage: this.stageId, startStage: this.startStageId, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId, difficulty: this.difficultyId,
       powers: this.player.powers.map((w) => ({ icon: w.def.icon, name: w.def.name, level: w.level })),
     });
     this.scene.pause();
@@ -351,23 +409,28 @@ class GameScene extends Phaser.Scene {
     if (this.joy.active) { x += this.joy.x; y += this.joy.y; }
     const dash = Phaser.Input.Keyboard.JustDown(K.SHIFT) || Phaser.Input.Keyboard.JustDown(K.SPACE) || this.requestDash;
     this.requestDash = false;
-    return { x, y, dash };
+    const interact = Phaser.Input.Keyboard.JustDown(K.E) || Phaser.Input.Keyboard.JustDown(K.ENTER);
+    return { x, y, dash, interact };
   }
 
   // ---------------------------------------------------------- loop principal
   update(time, delta) {
-    if (!this.gameReady) return;
+    if (!this.gameReady || this.transitioning) return;
     const dt = Math.min(delta / 1000, 0.05);
+    this.visualTime += dt;
     this.drawJoystick();
-    if (this.ended) { this.fx.update(dt); this.world.update(dt, this.t); return; }
-    this.t += dt;
+    if (this.ended) { this.fx.update(dt); this.world.update(dt, this.visualTime); return; }
+    const input = this.readInput();
+    if (input.interact) { this.enterCastle(); if (this.transitioning) return; }
+    // A travessia segura após o chefe não gera pontuação de sobrevivência.
+    if (!this.stageCleared) this.t += dt;
 
     // Grade espacial com todos os alvos (inimigos + chefe)
     this.grid.clear();
     for (const e of this.enemies.pool) if (e.alive) this.grid.insert(e);
     if (this.boss && this.boss.alive) this.grid.insert(this.boss);
 
-    this.player.update(dt, this.readInput(), this.world);
+    this.player.update(dt, input, this.world);
     this.enemies.update(dt);
     this.encounters.update(dt);
     if (this.boss) this.boss.update(dt);
@@ -376,7 +439,7 @@ class GameScene extends Phaser.Scene {
     this.gems.update(dt);
     this.updateHazards(dt);
     this.fx.update(dt);
-    this.world.update(dt, this.t);
+    this.world.update(dt, this.visualTime);
 
     if (!this.bossStarted && this.t >= this.bossTime) this.startBossFight();
     this.progression.update(dt);

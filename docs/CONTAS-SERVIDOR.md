@@ -157,3 +157,26 @@ Veja [EXPANSAO.md](EXPANSAO.md) para controles, receitas e balanceamento.
 ```sh
 python3 tests/browser_accounts.py --expansion
 ```
+
+## Campanha Floresta → Castelo
+
+O frontend inicia a campanha com `stage:"forest"`. Para compatibilidade,
+`/api/runs/start` sem stage continua criando uma partida de castelo isolado.
+IDs permitidos: `forest` e `castle`; a resposta inclui stage. Resultados
+antigos ganham `start_stage/current_stage="castle"`, sem alteração de pontos.
+
+`POST /api/runs/advance` recebe `{run_id}` com a mesma sessão e CSRF do início.
+A rota aceita apenas partidas abertas iniciadas na floresta. Registra a ida
+ao castelo uma vez e devolve a mesma resposta em repetições, para permitir
+recuperar uma resposta perdida. Em partidas classificadas, impede avanço
+antes da duração mínima da primeira fase. Uma vitória da campanha exige
+passagem registrada, duração acumulada de duas fases e tempo mínimo desde
+a passagem. Abates/dano/pontos acumulam na mesma run; o frontend congela o
+tempo creditado entre a morte do primeiro chefe e a entrada no castelo.
+
+`GET /api/leaderboard?stage=forest` filtra campanhas; `stage=castle` filtra
+partidas isoladas/antigas. A ausência desse parâmetro mantém a consulta
+compatível de clientes antigos; o frontend sempre envia o percurso escolhido.
+A conta, a dificuldade e as regras do início continuam vinculadas à run.
+
+Veja [FLORESTA.md](FLORESTA.md) para a experiência das duas fases.

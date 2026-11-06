@@ -4,7 +4,8 @@
 > revisão final aprovada e suítes atuais passaram.
 > Evidência atual em [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md).
 
-Implementado em 03/11/2026. Abra `http://127.0.0.1:5501/` após iniciar
+Implementado em 03/11/2026. Desde 04/11, a campanha possui floresta e castelo,
+com 15 minutos por fase; veja [FLORESTA.md](FLORESTA.md). Abra `http://127.0.0.1:5501/` após iniciar
 `./INICIAR-JOGO.sh`. O endereço normal mantém a abertura com os créditos.
 Escolha o herói e, em seguida, a dificuldade.
 
@@ -53,7 +54,7 @@ fornece melhorias comuns. Os dois minibosses também deixam baús. As caixas
 permanecem no chão até serem recolhidas; não há sorteio de evolução sem os
 requisitos completos.
 
-## Hordas e chefes
+## Hordas e chefes do castelo (relógio local da fase)
 
 | Horário | Encontro | Recompensa ao derrotar |
 | --- | --- | --- |

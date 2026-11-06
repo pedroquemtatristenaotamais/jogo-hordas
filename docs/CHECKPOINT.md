@@ -1,5 +1,5 @@
-> **Retomada em 04/11/2026:** dash com dois dedos corrigido e expansão revalidada.
-> Estado atual e comandos em [RETOMADA-EXPANSAO.md](RETOMADA-EXPANSAO.md).
+> **Atualização em 04/11/2026:** campanha com floresta como primeira fase e castelo como segunda.
+> Leia [FLORESTA.md](FLORESTA.md) e [RETOMADA-FLORESTA.md](RETOMADA-FLORESTA.md) para o estado atual.
 
 # Checkpoint — 30/10/2026; retomada em 03/11/2026
 
@@ -92,3 +92,24 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
 - Servidor disponível em `http://127.0.0.1:5501/`; regra de fábrica 900 segundos.
 - Não há pendências bloqueadoras da expansão nesta revisão. Equilíbrio
   com jogadores e desempenho em aparelhos físicos não foram medidos pela simulação.
+
+## Floresta antes do castelo — 04/11/2026
+
+- Floresta noturna sombria, árvore como limite, trilhas e clareira, 16 corpos
+  decorativos com lampiões, luzes âmbar, poças, raízes e carroças. Sem tema de Halloween.
+- Oito espécies próprias, Matriarca do Brejo e Caçador Sem Sepultura aos 5/10
+  minutos, Coração de Raízes aos 15. Cada fase mantém o esquema de 15 minutos.
+- O chefe da floresta abre o portão; E/Enter ou toque na entrada leva ao
+  castelo com build/nível/XP/dash preservados e vida recuperada. Tempo local
+  reinicia; estatísticas e a mesma partida continuam. Vitória só no castelo.
+- Corrigidos empurrão de tronco além da borda e pontuação infinita depois
+  do chefe: caminhada segue ativa, mas tempo creditado fica parado.
+- Servidor registra fases, avanço idempotente com sessão, valida vitória
+  de duas fases e filtra percurso no ranking. Dados antigos e contas preservados.
+- Snapshot anterior: `snapshot/pre-floresta-20261104-082006` (commit 08ec5a2).
+  Código em Downloads/backups-jogo-hordas e cópia privada consistente do banco.
+- API: 21 testes passaram, navegador da floresta: oito cenários passaram, castelo: 12 passaram, controles: oito
+  passou e contas/admin: sete passou, sem erros JS. Revisão integral aprovada em
+  [revisao-floresta/review.md](revisao-floresta/review.md).
+- URL normal conferida: Intro → convidado → herói → dificuldade → floresta.
+- Capturas em `/tmp/muralha-floresta/`; documentação em [FLORESTA.md](FLORESTA.md).
