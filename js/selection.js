@@ -1,13 +1,144 @@
-// A dificuldade é uma escolha por partida e acompanha o resultado no servidor.
+// Fases e dificuldade são escolhas por partida; o servidor valida o progresso.
+class StageSelectScene extends Phaser.Scene {
+  constructor() { super('StageSelect'); }
+  init(data = {}) { this.charId = data.char; this.stageId = data.stage || 'forest'; }
+  create() {
+    const W = CONFIG.width;
+    menuBackdrop(this);
+    this.add.image(W / 2, 360, 'vignette').setDepth(4).setAlpha(0.9);
+    mkText(this, W / 2, 98, 'ESCOLHA SEU CAMINHO', 42, '#e6d6a8').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 138, 'A noite começa na floresta. A passagem leva ao castelo.', 18, '#b8acc7').setOrigin(0.5).setDepth(10);
+    this.going = false;
+    this.ids = ['forest', 'castle', 'soon'];
+    this.sel = Math.max(0, this.ids.indexOf(this.stageId));
+    const stages = [
+      { id: 'forest', title: 'FLORESTA', color: 0x78aa86, subtitle: 'A FLORESTA DOS ESQUECIDOS',
+        description: 'Siga os lampiões, enfrente os guardiões e abra a passagem para o castelo.' },
+      { id: 'castle', title: 'CASTELO', color: 0xc6a06c, subtitle: 'A FORTALEZA SOMBRIA',
+        description: 'Entre na fortaleza e desafie o Cavaleiro Sombrio no coração da muralha.' },
+      { id: 'soon', title: 'EM BREVE', color: 0x77718c, subtitle: 'ALÉM DA MURALHA',
+        description: 'Novas terras repousam além da névoa. Outro caminho ainda será revelado.' },
+    ];
+    this.cards = stages.map((stage, i) => {
+      const x = 240 + i * 400, y = 374;
+      const panel = this.add.rectangle(x, y, 360, 430, 0x15111d, 0.97).setStrokeStyle(2, stage.color).setDepth(10);
+      const art = this.stageArt(stage.id, x - 156, y - 187);
+      mkText(this, x - 148, y - 166, i === 2 ? '???' : '0' + (i + 1), 17, '#d7c6a3').setDepth(12);
+      mkText(this, x, y - 3, stage.title, 32, '#' + stage.color.toString(16).padStart(6, '0')).setOrigin(0.5).setDepth(12);
+      mkText(this, x, y + 34, stage.subtitle, 13, '#a99bb8').setOrigin(0.5).setDepth(12);
+      mkText(this, x, y + 62, stage.description, 17, '#cfc3d8', { wordWrap: { width: 308 }, align: 'center' }).setOrigin(0.5, 0).setDepth(12);
+      const status = mkText(this, x, y + 163, '', 16, '#efd59c').setOrigin(0.5).setDepth(12);
+      const shortcut = mkText(this, x, y + 192, i === 2 ? 'NOVOS CAMINHOS' : '[ ' + (i + 1) + ' ]', 13, '#8b809d').setOrigin(0.5).setDepth(12);
+      if (stage.id !== 'soon') {
+        panel.setInteractive({ useHandCursor: true });
+        panel.on('pointerover', () => this.select(i));
+        panel.on('pointerdown', () => { this.select(i); this.confirm(); });
+      }
+      return { ...stage, panel, art, status, shortcut };
+    });
+    this.hint = mkText(this, W / 2, 626, '', 17, '#a99bb8').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 675, '← → escolher   •   1 · 2: iniciar   •   ENTER: confirmar   •   ESC: heróis', 17, '#8f829e').setOrigin(0.5).setDepth(10);
+    const keyboard = this.input.keyboard;
+    keyboard.on('keydown-LEFT', () => this.select((this.sel + 2) % 3));
+    keyboard.on('keydown-A', () => this.select((this.sel + 2) % 3));
+    keyboard.on('keydown-RIGHT', () => this.select((this.sel + 1) % 3));
+    keyboard.on('keydown-D', () => this.select((this.sel + 1) % 3));
+    ['ONE', 'TWO', 'THREE'].forEach((key, i) => keyboard.on('keydown-' + key, () => { this.select(i); this.confirm(); }));
+    keyboard.on('keydown-ENTER', () => this.confirm());
+    keyboard.on('keydown-SPACE', () => this.confirm());
+    keyboard.on('keydown-ESC', () => { if (!this.going) { this.going = true; this.scene.start('Select'); } });
+    const refresh = () => this.refreshProgress();
+    window.addEventListener('muralha-session', refresh);
+    this.events.once('shutdown', () => window.removeEventListener('muralha-session', refresh));
+    this.refreshProgress();
+    this.cameras.main.fadeIn(250);
+  }
+  stageArt(id, x, y) {
+    const art = this.add.graphics().setDepth(11);
+    art.fillStyle(id === 'forest' ? 0x111e22 : id === 'castle' ? 0x171625 : 0x181725).fillRect(x, y, 312, 154);
+    art.fillStyle(0xb4b6bd, 0.55).fillCircle(x + 245, y + 34, 19);
+    art.fillStyle(0x11131f).fillTriangle(x, y + 120, x + 83, y + 40, x + 175, y + 120);
+    art.fillTriangle(x + 122, y + 120, x + 216, y + 54, x + 312, y + 120);
+    if (id === 'forest') {
+      art.fillStyle(0x283a31).fillTriangle(x + 123, y + 154, x + 158, y + 90, x + 205, y + 154);
+      for (let i = 0; i < 7; i++) {
+        const treeX = x + 12 + i * 47, top = y + 17 + (i % 3) * 13;
+        art.fillStyle(0x2b2a25).fillRect(treeX + 8, top + 48, 7, 80);
+        art.fillStyle(i % 2 ? 0x223c32 : 0x1b302b).fillTriangle(treeX - 16, top + 83, treeX + 11, top, treeX + 40, top + 83);
+        art.fillTriangle(treeX - 22, top + 108, treeX + 11, top + 30, treeX + 46, top + 108);
+      }
+      for (const lampX of [113, 199]) {
+        art.fillStyle(0x5b4730).fillRect(x + lampX, y + 110, 3, 31);
+        art.fillStyle(0xf5ca79, 0.12).fillCircle(x + lampX + 1, y + 109, 16);
+        art.fillStyle(0xecc278).fillRect(x + lampX - 3, y + 104, 10, 10);
+      }
+    } else if (id === 'castle') {
+      art.fillStyle(0x3c3945).fillRect(x + 72, y + 63, 169, 90);
+      art.fillStyle(0x4d4651).fillRect(x + 57, y + 37, 43, 117).fillRect(x + 214, y + 37, 43, 117);
+      art.fillStyle(0x665662);
+      for (let i = 0; i < 4; i++) {
+        art.fillRect(x + 57 + i * 12, y + 27, 7, 15).fillRect(x + 214 + i * 12, y + 27, 7, 15);
+      }
+      art.fillStyle(0x75616a);
+      for (let row = 0; row < 5; row++) for (let column = 0; column < 8; column++) {
+        art.fillRect(x + 76 + column * 20 + (row % 2) * 7, y + 69 + row * 16, 14, 1);
+      }
+      art.fillStyle(0x090a12).fillRect(x + 139, y + 110, 36, 44).fillCircle(x + 157, y + 110, 18);
+      art.fillStyle(0xe6b56c).fillRect(x + 76, y + 64, 7, 17).fillRect(x + 232, y + 64, 7, 17);
+      art.fillStyle(0xd1a462, 0.14).fillCircle(x + 79, y + 72, 17).fillCircle(x + 235, y + 72, 17);
+    } else {
+      art.fillStyle(0x454052).fillTriangle(x + 32, y + 154, x + 133, y + 56, x + 230, y + 154);
+      art.fillStyle(0x353247).fillTriangle(x + 142, y + 154, x + 238, y + 72, x + 312, y + 154);
+      for (let i = 0; i < 3; i++) art.fillStyle(0x89849d, 0.08).fillRect(x, y + 99 + i * 17, 312, 14);
+      mkText(this, x + 156, y + 83, '?', 52, '#c7bcdc').setOrigin(0.5).setAlpha(0.65).setDepth(12);
+    }
+    return art;
+  }
+  refreshProgress() {
+    this.cards.forEach((card) => {
+      const playable = GamePortal.canPlayStage(card.id);
+      card.status.setText(card.id === 'soon' ? 'AINDA NÃO REVELADO' : playable ? (card.id === 'forest' ? 'INICIAR CAMPANHA' : 'ENTRAR NO CASTELO') : 'BLOQUEADO · CONCLUA A FLORESTA');
+      card.status.setFontSize(playable || card.id === 'soon' ? 16 : 13);
+      card.status.setColor(playable ? '#efd59c' : '#9e8eaa');
+      card.art.setAlpha(playable ? 1 : 0.5);
+      if (card.panel.input) card.panel.input.cursor = playable ? 'pointer' : 'default';
+    });
+    this.select(this.sel);
+  }
+  select(i) {
+    if (this.going || !this.cards[i]) return;
+    this.sel = i;
+    this.cards.forEach((card, index) => card.panel.setStrokeStyle(index === i ? 4 : 2, index === i ? 0xffdf9c : card.color)
+      .setFillStyle(index === i ? 0x2a2034 : 0x15111d));
+    const id = this.ids[i];
+    this.hint.setText(id === 'soon' ? 'Uma nova jornada aguarda além da névoa.'
+      : !GamePortal.canPlayStage(id) ? 'Atravesse a floresta para liberar o castelo neste perfil.'
+      : GamePortal.user ? `Progresso de ${GamePortal.user.username}` : 'Progresso de convidado salvo neste navegador.');
+  }
+  confirm() {
+    const stage = this.ids[this.sel];
+    if (this.going || !GamePortal.canPlayStage(stage)) return;
+    this.going = true;
+    Sfx.play('ui');
+    this.cameras.main.fadeOut(220);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      if (!GamePortal.canPlayStage(stage)) {
+        this.going = false; this.refreshProgress(); this.cameras.main.fadeIn(180); return;
+      }
+      this.scene.start('Difficulty', { char: this.charId, stage });
+    });
+  }
+}
+
 class DifficultyScene extends Phaser.Scene {
   constructor() { super('Difficulty'); }
-  init(data) { this.charId = data.char; }
+  init(data = {}) { this.charId = data.char; this.stageId = data.stage === 'castle' ? 'castle' : 'forest'; }
   create() {
     const W = CONFIG.width;
     menuBackdrop(this);
     this.add.image(W / 2, 360, 'vignette').setDepth(4).setAlpha(0.9);
     mkText(this, W / 2, 64, 'ESCOLHA SEU DESAFIO', 42, '#e6d6a8').setOrigin(0.5).setDepth(10);
-    mkText(this, W / 2, 113, 'Floresta → Castelo • 15 min por fase • minibosses aos 5 e 10', 18, '#b8acc7').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 113, (this.stageId === 'castle' ? 'Castelo • 15 min • minibosses aos 5 e 10' : 'Floresta → Castelo • 15 min por fase • minibosses aos 5 e 10'), 18, '#b8acc7').setOrigin(0.5).setDepth(10);
     this.going = false;
     this.ids = Object.keys(DIFFICULTIES);
     this.sel = Math.max(0, this.ids.indexOf(this.registry.get('difficulty') || 'medium'));
@@ -25,13 +156,13 @@ class DifficultyScene extends Phaser.Scene {
       return panel;
     });
     mkText(this, W / 2, 590, 'Ataques automáticos • SHIFT / ESPAÇO: dash • G: receitas do grimório', 18, '#b8acc7').setOrigin(0.5).setDepth(10);
-    mkText(this, W / 2, 636, '← → escolher   •   1 a 4: iniciar   •   ENTER: confirmar   •   ESC: heróis', 17, '#8f829e').setOrigin(0.5).setDepth(10);
+    mkText(this, W / 2, 636, '← → escolher   •   1 a 4: iniciar   •   ENTER: confirmar   •   ESC: fases', 17, '#8f829e').setOrigin(0.5).setDepth(10);
     this.input.keyboard.on('keydown-LEFT', () => this.select((this.sel + 3) % 4));
     this.input.keyboard.on('keydown-RIGHT', () => this.select((this.sel + 1) % 4));
     ['ONE', 'TWO', 'THREE', 'FOUR'].forEach((key, i) => this.input.keyboard.on('keydown-' + key, () => { this.select(i); this.confirm(); }));
     this.input.keyboard.on('keydown-ENTER', () => this.confirm());
     this.input.keyboard.on('keydown-SPACE', () => this.confirm());
-    this.input.keyboard.on('keydown-ESC', () => { if (!this.going) this.scene.start('Select'); });
+    this.input.keyboard.on('keydown-ESC', () => { if (!this.going) this.scene.start('StageSelect', { char: this.charId, stage: this.stageId }); });
     this.select(this.sel);
     this.cameras.main.fadeIn(250);
   }
@@ -42,11 +173,17 @@ class DifficultyScene extends Phaser.Scene {
   }
   confirm() {
     if (this.going) return;
+    if (!GamePortal.canPlayStage(this.stageId)) {
+      this.scene.start('StageSelect', { char: this.charId, stage: this.stageId }); return;
+    }
     this.going = true;
     const difficulty = this.ids[this.sel];
     this.registry.set('difficulty', difficulty);
     Sfx.play('ui');
     this.cameras.main.fadeOut(250);
-    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Game', { char: this.charId, difficulty, stage: new URLSearchParams(location.search).get('stage') || 'forest' }));
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      if (!GamePortal.canPlayStage(this.stageId)) { this.scene.start('StageSelect', { char: this.charId, stage: this.stageId }); return; }
+      this.scene.start('Game', { char: this.charId, difficulty, stage: this.stageId });
+    });
   }
 }

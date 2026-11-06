@@ -32,6 +32,8 @@ fs.mkdirSync(artifacts, { recursive: true });
     await page.evaluate(() => GAME.scene.getScene('Menu').go());
     await page.waitForFunction(() => GAME.scene.isActive('Select'));
     await page.keyboard.press('Enter');
+    await page.waitForFunction(() => GAME.scene.isActive('StageSelect'));
+    await page.keyboard.press('1');
     await page.waitForFunction(() => GAME.scene.isActive('Difficulty'));
     assert(await page.evaluate(() => GAME.scene.getScene('Difficulty').cards.length === 4), 'Faltam dificuldades');
     await page.waitForFunction(() => !GAME.scene.getScene('Difficulty').cameras.main.fadeEffect.isRunning);
@@ -42,7 +44,7 @@ fs.mkdirSync(artifacts, { recursive: true });
       const g = GAME.scene.getScene('Game');
       return g.difficultyId === 'hardcore' && g.bossTime === 900 && g.player.dashLevel === 1;
     }), 'Seleção não iniciou Hardcore de 15 minutos');
-    check('menu → herói → quatro dificuldades → Hardcore com chefe aos 15 minutos');
+    check('menu → herói → fase → quatro dificuldades → Hardcore com chefe aos 15 minutos');
 
     await fresh();
     const recipeChecks = await page.evaluate(() => {

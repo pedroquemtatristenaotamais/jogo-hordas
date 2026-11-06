@@ -43,6 +43,7 @@ const artifacts = '/tmp/muralha-floresta'; fs.mkdirSync(artifacts, { recursive: 
       }
       if (g.children.list.some(o => o.type === 'TileSprite' && ['ground','wall','path'].includes(o.texture?.key))) throw Error('Piso ou muralha do castelo na floresta');
       for (const point of w.pathBranches[0].points) {
+        if(point.y<640)continue; // o último trecho termina na porta física ainda fechada
         const walker={x:point.x,y:point.y,radius:p.radius};w.constrain(walker);
         if(Math.hypot(walker.x-point.x,walker.y-point.y)>1) throw Error('Trilha principal bloqueada');
       }

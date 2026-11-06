@@ -13,6 +13,8 @@ async function playFromMenu(page) {
   await page.evaluate(() => GAME.scene.getScene('Menu').go());
   await page.waitForFunction(() => GAME.scene.isActive('Select'));
   await page.keyboard.press('Enter');
+  await page.waitForFunction(() => GAME.scene.isActive('StageSelect'));
+  await page.keyboard.press('1');
   await page.waitForFunction(() => GAME.scene.isActive('Difficulty'));
   await page.keyboard.press('Enter');
   await readyGame(page);

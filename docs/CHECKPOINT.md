@@ -1,4 +1,4 @@
-> **Atualização em 06/11/2026:** floresta com doze espécies comuns; campanha Floresta → Castelo.
+> **Atualização em 06/11/2026:** seleção de fases, desbloqueio por conta, portas físicas, checkpoint de fase e cutscene final. Leia [JORNADA.md](JORNADA.md).
 > Leia [FLORESTA.md](FLORESTA.md) e [RETOMADA-FLORESTA.md](RETOMADA-FLORESTA.md) para o estado atual.
 
 # Checkpoint — 30/10/2026; retomada em 03/11/2026
@@ -126,3 +126,22 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
   Simulação de 15 minutos encontrou as doze espécies, pico de 104 inimigos
   com build evoluída e invencibilidade; não mede FPS nem equilíbrio humano.
 - Arte conferida em `/tmp/muralha-floresta/novas-criaturas.png`.
+
+## Seleção de fases e desfecho — 06/11/2026
+
+- Menu/herói → fase → dificuldade. Castelo bloqueado até passar da floresta;
+  Em breve é apresentação sem fase jogável. Perfil de convidado separado.
+- Muralha física na floresta; só a abertura central leva ao castelo.
+  Chegada animada sai da porta sul interna antes do início do combate.
+- Morte reinicia fase atual com build de entrada, vida cheia, nova run e
+  estatísticas zeradas. A passagem normal continua preservando a campanha.
+- SQLite guarda desbloqueios, conclusões e estatísticas por conta. Migração
+  aplicada no banco real, preservando hashes e partidas anteriores.
+- Vitória final inicia rachaduras/lava/queda do herói e fade, depois End.
+  Cutscene única, sem combate/pontos extras ou menus cobrindo a sequência.
+- Revisão independente e regressões RED→GREEN para respostas de sessão
+  atrasadas, atalhos e duração cinematográfica. API 29/29 e cinco suítes
+  completas de navegador passaram, sem erros JS. Estado em [JORNADA.md](JORNADA.md)
+  e [RETOMADA-JORNADA.md](RETOMADA-JORNADA.md).
+- Snapshot: `snapshot/pre-fases-cutscene-20261106-100233`; código e backup
+  consistente de dados privados mantidos fora do projeto publicado.

@@ -12,11 +12,13 @@ sys.path.insert(0, str(ROOT))
 from server import create_server
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--journey-regressions', action='store_true', help='Conferir respostas de perfil atrasadas e cutscene.')
+parser.add_argument('--journey', action='store_true', help='Conferir fases, portas, checkpoint, perfil e desfecho.')
 parser.add_argument('--forest', action='store_true', help='Conferir campanha Floresta→Castelo, cenário, encontros e transferência.')
 parser.add_argument('--expansion', action='store_true', help='Conferir poderes, evoluções, dash, encontros e dificuldades.')
 parser.add_argument('--controls', action='store_true', help='Conferir teclado e pausa após janelas de conta/ranking.')
 args = parser.parse_args()
-script = 'browser_forest.cjs' if args.forest else 'browser_expansion.cjs' if args.expansion else 'browser_portal_controls.cjs' if args.controls else 'browser_accounts.cjs'
+script = 'journey_regressions.cjs' if args.journey_regressions else 'browser_journey.cjs' if args.journey else 'browser_forest.cjs' if args.forest else 'browser_expansion.cjs' if args.expansion else 'browser_portal_controls.cjs' if args.controls else 'browser_accounts.cjs'
 
 with tempfile.TemporaryDirectory(prefix='muralha-browser-') as folder:
     private = Path(folder) / 'dados'
@@ -26,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='muralha-browser-') as folder:
     env = os.environ.copy()
     env['MURALHA_TEST_URL'] = f'http://127.0.0.1:{httpd.server_port}'
     env['MURALHA_TEST_CREDENTIALS'] = str(private / 'admin-inicial.json')
+    env['MURALHA_TEST_DATA_DIR'] = str(private)
     try:
         result = subprocess.run(['node', str(ROOT / 'tests' / script)], env=env, cwd=ROOT)
     finally:

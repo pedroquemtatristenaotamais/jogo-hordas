@@ -187,7 +187,7 @@ class SelectScene extends Phaser.Scene {
     this.registry.set('lastChar', id);
     Sfx.play('ui');
     this.cameras.main.fadeOut(300);
-    this.cameras.main.once('camerafadeoutcomplete', async () => { await GamePortal.ready; this.scene.start('Difficulty', { char: id }); });
+    this.cameras.main.once('camerafadeoutcomplete', async () => { await GamePortal.ready; this.scene.start('StageSelect', { char: id }); });
   }
   back() {
     if (this.going) return;
@@ -209,7 +209,7 @@ class EndScene extends Phaser.Scene {
     const title = mkText(this, W / 2, 130, win ? 'VITÓRIA!' : 'VOCÊ CAIU', 62, col, { strokeThickness: 8 }).setOrigin(0.5);
     title.setShadow(0, 0, win ? '#c8a640' : '#c01818', 20, true, true);
     this.tweens.add({ targets: title, scaleX: 1.04, scaleY: 1.04, yoyo: true, repeat: -1, duration: 1100, ease: 'Sine.easeInOut' });
-    mkText(this, W / 2, 190, win ? 'O Cavaleiro Sombrio foi derrotado. O castelo respira de novo…' : d.stage === 'forest' ? 'As raízes da floresta guardaram mais uma alma.' : 'As sombras do castelo reclamaram mais uma alma.', 17, '#b8a8c8', { wordWrap: { width: 580 }, align: 'center', strokeThickness: 2 }).setOrigin(0.5);
+    mkText(this, W / 2, 190, win ? 'O Cavaleiro caiu. Sob a muralha, outro abismo desperta…' : d.stage === 'forest' ? 'As raízes da floresta guardaram mais uma alma.' : 'As sombras do castelo reclamaram mais uma alma.', 17, '#b8a8c8', { wordWrap: { width: 580 }, align: 'center', strokeThickness: 2 }).setOrigin(0.5);
 
     const rows = [['Herói', CHARACTERS[d.char].name], ['Tempo de sobrevivência', fmtTime(d.time)], ['Nível alcançado', String(d.level)], ['Inimigos derrotados', String(d.kills)], ['Dano causado', Math.floor(d.damage || 0).toLocaleString('pt-BR')], ['Pontos', Math.floor(d.points || 0).toLocaleString('pt-BR')]];
     rows.forEach((r, i) => {
@@ -244,7 +244,11 @@ class EndScene extends Phaser.Scene {
   again() {
     if (this.done) return; this.done = true;
     this.game.scene.stop('UI');
-    this.scene.start('Game', { char: this.d.char, difficulty: this.d.difficulty, stage: this.d.startStage || 'forest' });   // reinício limpo: a cena é recriada do zero
+    this.scene.start('Game', {
+      char: this.d.char, difficulty: this.d.difficulty,
+      stage: this.d.win ? this.d.startStage || 'forest' : this.d.stage || 'forest',
+      checkpoint: this.d.win ? null : this.d.checkpoint,
+    });
   }
   menu() {
     if (this.done) return; this.done = true;

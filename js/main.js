@@ -14,5 +14,5 @@ window.GAME = new Phaser.Game({
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   fps: { target: 60 },
   disableContextMenu: true,
-  scene: [BootScene, MenuScene, SelectScene, DifficultyScene, GameScene, UIScene, EndScene, IntroScene],
+  scene: [BootScene, MenuScene, SelectScene, StageSelectScene, DifficultyScene, GameScene, UIScene, EndScene, IntroScene, FinaleOverlayScene],
 });

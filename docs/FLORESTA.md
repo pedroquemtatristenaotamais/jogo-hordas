@@ -12,6 +12,10 @@ nessa fase; não há elementos festivos de Halloween.
 
 ## Fases e passagem
 
+Depois do herói há seleção de fase, seguida da dificuldade. O Castelo
+permanece bloqueado até atravessar a floresta nesse perfil. Veja
+[JORNADA.md](JORNADA.md) para progresso por conta, reinício e cutscene final.
+
 Cada fase tem 15 minutos de sobrevivência antes do chefe. As quatro
 dificuldades e as receitas de armas continuam funcionando nas duas fases.
 
@@ -28,6 +32,10 @@ Vencer a floresta remove a barreira e abre o portão. Siga os lampiões para
 o norte. Perto da porta, use **E**, **Enter** ou o botão **Entrar no castelo**.
 A porta permanece selada antes de derrotar o chefe. A vitória da campanha
 só aparece depois de derrotar o Cavaleiro Sombrio na segunda fase.
+A muralha é física; somente a porta aberta permite a passagem central.
+No castelo, a chegada sai da porta sul. Morrer reinicia a fase atual com
+os equipamentos de entrada. O chefe final rompe o piso ritual e provoca
+a queda no fogo antes da tela de vitória.
 
 Na passagem, armas, níveis das armas, evoluções, uniões, ingredientes
 consumidos, atributos, nível, XP e dash são mantidos. A vida é recuperada.

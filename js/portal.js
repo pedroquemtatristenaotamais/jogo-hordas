@@ -5,10 +5,21 @@
   const apiOrigin = localHost && location.port === '5500'
     ? `${location.protocol}//${location.hostname}:5501` : location.origin;
   const defaults = { healthDropChance: 0.05, bossTime: 900, spawnBaseRate: 1.1, spawnGrowth: 0.0115, maxEnemies: 240 };
+  const guestProgressKey = 'muralha.guest.progress.v1';
+  const emptyProgress = () => ({ castle_unlocked: false, forest_clears: 0, castle_clears: 0 });
+  const emptyStats = () => ({ runs: 0, victories: 0, kills: 0, damage: 0, points: 0, best_points: 0 });
+  const count = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
+  const cleanProgress = (value) => ({ castle_unlocked: value?.castle_unlocked === true,
+    forest_clears: count(value?.forest_clears), castle_clears: count(value?.castle_clears) });
+  const cleanStats = (value) => Object.fromEntries(Object.keys(emptyStats()).map(key => [key, count(value?.[key])]));
+  let guestProgress = emptyProgress();
+  try { guestProgress = cleanProgress(JSON.parse(localStorage.getItem(guestProgressKey))); } catch (_) { /* Storage is optional. */ }
   const dialogs = [];
   let root, toolbar, identity, connection, notices;
   let offered = false, online = true, initialized = false, sessionPending = null;
   let lock = null, dialogId = 0, lastToolbar = '';
+  let sessionVersion = 0;
+  let profileVersion = 0;
 
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -32,11 +43,13 @@
   const paused = (key) => {
     try { return !!game()?.scene?.isPaused(key); } catch (_) { return false; }
   };
+  const cinematicActive = () => (active('Game') || paused('Game')) && !!scene('Game')?.finale && !active('End');
 
   function updateToolbar() {
     if (!toolbar) return;
-    const mode = active('End') ? 'end' : (active('Game') || paused('Game')) ? 'game' : active('Menu') ? 'menu' : '';
-    toolbar.hidden = !mode || active('Intro');
+    const mode = active('End') ? 'end' : (active('Game') || paused('Game')) ? 'game'
+      : ['Menu', 'Select', 'StageSelect', 'Difficulty'].some(active) ? 'menu' : '';
+    toolbar.hidden = !mode || active('Intro') || cinematicActive();
     toolbar.dataset.mode = mode;
     const signature = `${portal.user?.id}|${portal.user?.username}|${portal.user?.role}|${online}`;
     if (signature === lastToolbar) return;
@@ -48,22 +61,51 @@
       admin.title = 'Abrir ferramentas de administração (F2)';
       identity.append(admin);
     }
-    connection.textContent = online ? (portal.user ? (portal.isAdmin ? 'Administrador · fora do ranking' : 'Conta conectada') : 'Modo convidado') : 'Contas offline · convidado disponível';
+    connection.textContent = online ? (portal.user ? (portal.isAdmin ? 'Administrador · fora do ranking' : 'Conta conectada') : 'Modo convidado')
+      : portal.user ? 'Conta offline · progresso preservado' : 'Contas offline · convidado disponível';
     connection.classList.toggle('portal-offline', !online);
   }
 
+  function profileSignature() {
+    return JSON.stringify({ user: portal.user, settings: portal.settings, progress: portal.getProgress(), stats: portal.stats });
+  }
+
+  function profileChanged(previous) {
+    updateToolbar();
+    if (previous === profileSignature()) return;
+    for (const dialog of [...dialogs]) if (dialog.view === 'account') showAccount(dialog);
+    window.dispatchEvent(new CustomEvent('muralha-session', {
+      detail: { user: portal.user, settings: { ...portal.settings }, progress: portal.getProgress(), stats: { ...portal.stats } },
+    }));
+  }
+
+  // Run endpoints return profile fragments; they must not replace the session.
+  function applyProfile(data, version) {
+    if (version !== sessionVersion || !portal.user) return;
+    profileVersion++;
+    const previous = profileSignature();
+    if (data?.progress && typeof data.progress === 'object') portal.progress = cleanProgress(data.progress);
+    if (data?.stats && typeof data.stats === 'object') portal.stats = cleanStats(data.stats);
+    if (data?.settings && typeof data.settings === 'object') portal.settings = { ...defaults, ...data.settings };
+    profileChanged(previous);
+  }
+
   function applySession(data) {
+    const signature = profileSignature();
     const previous = portal.user;
+    const previousCsrf = portal.csrf;
     const candidate = data?.user;
     portal.user = candidate && typeof candidate.username === 'string' && candidate.id != null
       ? { id: candidate.id, username: candidate.username, role: candidate.role } : null;
     portal.csrf = portal.user && typeof data?.csrf === 'string' ? data.csrf : null;
+    const sameUser = previous?.id === portal.user?.id && !!previous === !!portal.user;
+    if (!sameUser || previousCsrf !== portal.csrf || previous?.role !== portal.user?.role) sessionVersion++;
+    if (!portal.user || !sameUser) { portal.progress = emptyProgress(); portal.stats = emptyStats(); }
+    if (portal.user && data?.progress && typeof data.progress === 'object') portal.progress = cleanProgress(data.progress);
+    if (portal.user && data?.stats && typeof data.stats === 'object') portal.stats = cleanStats(data.stats);
     if (data?.settings && typeof data.settings === 'object') portal.settings = { ...defaults, ...data.settings };
     if (previous?.role === 'admin' && !portal.isAdmin) [...dialogs].reverse().forEach((dialog) => dialog.close());
-    updateToolbar();
-    if (previous?.id !== portal.user?.id || previous?.username !== portal.user?.username || previous?.role !== portal.user?.role) {
-      window.dispatchEvent(new CustomEvent('muralha-session', { detail: { user: portal.user, settings: portal.settings } }));
-    }
+    profileChanged(signature);
   }
 
   async function request(path, options = {}) {
@@ -72,6 +114,7 @@
     try { url = new URL(path, apiOrigin); } catch (_) { throw new Error('Abra o jogo pelo servidor local para acessar as contas.'); }
     if (url.origin !== apiOrigin || !url.pathname.startsWith('/api/')) throw new Error('Caminho de API inválido.');
     const method = (options.method || 'GET').toUpperCase();
+    const version = sessionVersion;
     const headers = { Accept: 'application/json' };
     const init = { method, credentials: 'include', headers };
     if (options.body !== undefined) {
@@ -98,15 +141,16 @@
     try { data = await response.json(); } catch (_) {
       const error = new Error('O servidor de contas não retornou uma resposta válida. Use INICIAR-JOGO.sh para iniciar o jogo.');
       error.status = response.status;
-      if (response.status === 401 || response.status === 403) applySession({ user: null, csrf: null });
+      if (response.status === 401 && version === sessionVersion) applySession({ user: null, csrf: null });
       throw error;
     }
     if (!response.ok) {
       const hadSession = !!portal.user;
-      if (response.status === 401 || response.status === 403) applySession({ user: null, csrf: null });
+      const invalidated = response.status === 401 && version === sessionVersion;
+      if (invalidated) applySession({ user: null, csrf: null });
       const error = new Error(typeof data?.error === 'string' ? data.error : `Não foi possível concluir a solicitação (${response.status}).`);
       error.status = response.status;
-      if (hadSession && (response.status === 401 || response.status === 403)) portal.notice(error.message);
+      if (hadSession && invalidated) portal.notice(error.message);
       throw error;
     }
     return data;
@@ -114,7 +158,16 @@
 
   function refreshSession() {
     if (sessionPending) return sessionPending;
-    sessionPending = request('/api/session').then((data) => { applySession(data); return data; }).finally(() => { sessionPending = null; });
+    const version = sessionVersion;
+    const revision = profileVersion;
+    sessionPending = request('/api/session').then((data) => {
+      if (version === sessionVersion) {
+        const sameIdentity = data?.user?.id === portal.user?.id && data?.user?.role === portal.user?.role && data?.csrf === portal.csrf;
+        // Uma consulta anterior ao avanço/final não desfaz o perfil já confirmado.
+        if (revision === profileVersion || !sameIdentity) applySession(data);
+      }
+      return data;
+    }).finally(() => { sessionPending = null; });
     return sessionPending;
   }
 
@@ -231,6 +284,7 @@
   }
 
   function showPassword(dialog) {
+    dialog.view = 'password';
     dialog.body.replaceChildren();
     dialog.footer.replaceChildren(button('Voltar à conta', () => showAccount(dialog)));
     dialog.body.append(element('p', 'portal-muted', 'Escolha uma senha de 8 a 128 caracteres.'));
@@ -262,11 +316,33 @@
   }
 
   function showAccount(dialog) {
+    dialog.view = 'account';
     dialog.body.replaceChildren();
     dialog.footer.replaceChildren(button('Fechar', dialog.close));
     if (!portal.user) { dialog.close(); return; }
     dialog.body.append(element('p', 'portal-account-name', portal.user.username));
     dialog.body.append(element('p', 'portal-muted', portal.isAdmin ? 'Conta administrativa. Suas partidas ficam fora do ranking.' : 'Suas melhores partidas podem entrar no ranking da muralha.'));
+    const table = (label, rows) => {
+      dialog.body.append(element('h3', 'portal-muted', label));
+      const scroll = element('div', 'portal-table-scroll');
+      const content = element('table', 'portal-table');
+      content.setAttribute('aria-label', label);
+      const body = element('tbody');
+      for (const [name, value] of rows) {
+        const row = element('tr');
+        const heading = element('th', '', name); heading.scope = 'row';
+        row.append(heading, element('td', '', value)); body.append(row);
+      }
+      content.append(body); scroll.append(content); dialog.body.append(scroll);
+    };
+    const progress = portal.getProgress();
+    table('Suas estatísticas', [['Partidas', portal.stats.runs], ['Vitórias', portal.stats.victories], ['Abates', portal.stats.kills],
+      ['Dano', portal.stats.damage], ['Pontos', portal.stats.points], ['Melhor partida', portal.stats.best_points]].map(([label, value]) => [label, number(value)]));
+    table('Suas fases', [
+      ['Floresta', `Disponível · ${number(progress.forest_clears)} conclusões`],
+      ['Castelo', portal.canPlayStage('castle') ? `Liberado · ${number(progress.castle_clears)} conclusões` : 'Bloqueado · conclua a Floresta'],
+      ['Em breve', 'Novas terras no horizonte'],
+    ]);
     const actions = element('div', 'portal-account-actions');
     const logout = button('Sair da conta', async () => {
       logout.disabled = true;
@@ -414,6 +490,10 @@
   function handleKeyboard(event) {
     const top = dialogs[dialogs.length - 1];
     if (!top) {
+      if (cinematicActive()) {
+        if (event.type === 'keydown' && ['g', 'f2'].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopImmediatePropagation(); }
+        return;
+      }
       if (event.type === 'keydown' && event.key.toLowerCase() === 'g' && !active('Intro')) {
         const tag = document.activeElement?.tagName;
         if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && window.PowerGuide) {
@@ -465,6 +545,8 @@
   const portal = window.GamePortal = {
     user: null,
     csrf: null,
+    progress: emptyProgress(),
+    stats: emptyStats(),
     settings: { ...defaults },
     get dialogOpen() { return dialogs.length > 0; },
     get isAdmin() { return this.user?.role === 'admin'; },
@@ -472,6 +554,26 @@
     openDialog,
     openLogin,
     openLeaderboard,
+    getProgress() { return { ...(this.user ? this.progress : guestProgress) }; },
+    canPlayStage(id) {
+      return id === 'forest' || (id === 'castle' && (this.isAdmin || this.getProgress().castle_unlocked));
+    },
+    recordGuestAdvance() {
+      if (this.user) return this.getProgress();
+      const previous = profileSignature();
+      guestProgress = { ...guestProgress, castle_unlocked: true, forest_clears: guestProgress.forest_clears + 1 };
+      try { localStorage.setItem(guestProgressKey, JSON.stringify(guestProgress)); } catch (_) { /* Retain the in-memory guest profile. */ }
+      profileChanged(previous);
+      return this.getProgress();
+    },
+    recordGuestVictory() {
+      if (this.user) return this.getProgress();
+      const previous = profileSignature();
+      guestProgress = { ...guestProgress, castle_clears: guestProgress.castle_clears + 1 };
+      try { localStorage.setItem(guestProgressKey, JSON.stringify(guestProgress)); } catch (_) { /* Retain the in-memory guest profile. */ }
+      profileChanged(previous);
+      return this.getProgress();
+    },
     notice(text) {
       if (!initialized) initDOM();
       if (!notices) return;
@@ -485,7 +587,7 @@
       offered = true;
       return this.ready.then(() => { if (!this.user) return this.openLogin(); });
     },
-    async beginRun(hero, practice = false, difficulty = 'medium', stage = 'castle') {
+    async beginRun(hero, practice = false, difficulty = 'medium', stage = 'forest') {
       await this.ready;
       if (!this.user) {
         // Convidados também recebem as regras atuais ao começar outra partida.
@@ -493,14 +595,22 @@
         if (!this.user) return { run_id: null, ranked: false, settings: { ...this.settings }, difficulty, stage };
       }
       try { return await request('/api/runs/start', { method: 'POST', body: { hero, practice: !!practice, difficulty, stage } }); }
-      catch (error) { this.notice(error.message); return { run_id: null, ranked: false }; }
+      catch (error) { this.notice(error.message); return { run_id: null, ranked: false, error: error.message, status: error.status }; }
     },
     async advanceRun(runId) {
-      return request('/api/runs/advance', { method: 'POST', body: { run_id: runId } });
+      const version = sessionVersion;
+      const data = await request('/api/runs/advance', { method: 'POST', body: { run_id: runId } });
+      applyProfile(data, version);
+      return data;
     },
     async finishRun(payload) {
       if (!payload?.run_id || !this.user) return { saved: false, ranked: false, points: 0 };
-      try { return await request('/api/runs/finish', { method: 'POST', body: payload }); }
+      const version = sessionVersion;
+      try {
+        const data = await request('/api/runs/finish', { method: 'POST', body: payload });
+        applyProfile(data, version);
+        return data;
+      }
       catch (error) { this.notice(error.message); return { saved: false, ranked: false, points: 0 }; }
     },
   };

@@ -76,7 +76,9 @@ class ForestWorld extends World {
   }
 
   inCastle(x, y) {
-    return y < this.gate.y + 130 && y > 80 && Math.abs(x - this.gate.x) < 355;
+    // A fachada é a borda norte inteira, não um objeto isolado no caminho.
+    // A margem sul também reserva espaço para os contrafortes e sua sombra.
+    return y < this.gate.y + 110;
   }
 
   free(x, y, padPath, padArena, spacing) {
@@ -273,18 +275,26 @@ class ForestWorld extends World {
 
   buildForestGate() {
     const x = this.gate.x, y = this.gate.y;
-    this.decal('forest_shadow', x, y - 65, 2.8, 0.55).setScale(3.8, 1.1);
+    // A muralha continua até as árvores das duas bordas. As alas repetem
+    // blocos de pedra, enquanto o corpo central e suas torres são únicos.
+    const wing = x - 288;
+    this.scene.add.tileSprite(wing / 2, y, wing, 384, 'forest_rampart').setOrigin(0.5, 1).setDepth(y - 3);
+    const right = x + 288;
+    this.scene.add.tileSprite((right + this.W) / 2, y, this.W - right, 384, 'forest_rampart').setOrigin(0.5, 1).setDepth(y - 3);
+    this.scene.add.tileSprite(this.W / 2, y + 25, this.W, 52, 'forest_wall_shadow').setDepth(-6020).setAlpha(0.72);
+    this.decal('forest_shadow', x, y + 5, 3.8, 0.55).setScale(4.5, 0.8);
+    this.decal('forest_gate_approach', x, y + 59, 1, 0.92).setDepth(-9810);
     this.gateImage = this.prop('forest_gate_closed', x, y);
-    this.forestLantern(x - 155, y - 37, { depth: y + 1, groundY: y + 8, scale: 2.1, alpha: 0.35 });
-    this.forestLantern(x + 154, y - 37, { depth: y + 1, groundY: y + 8, scale: 2.1, alpha: 0.35 });
+    this.forestLantern(x - 106, y - 57, { depth: y + 1, groundY: y + 8, scale: 1.8, alpha: 0.29 });
+    this.forestLantern(x + 106, y - 57, { depth: y + 1, groundY: y + 8, scale: 1.8, alpha: 0.29 });
     this.light(x, y - 65, 1.1, 0.035, 'forest_glow_warm');
     this.gateBeacon = this.lights[this.lights.length - 1];
     this.gateSpill = this.decal('forest_glow_warm', x, y + 30, 1, 0.035).setScale(1.4, 0.65).setBlendMode(Phaser.BlendModes.ADD);
-    // Contrafortes latéraux; a soleira e a área de chegada ficam livres.
-    this.solid(x - 229, y - 49, 28); this.solid(x + 229, y - 49, 28);
-    this.decal('forest_stones', x - 75, y + 28, 0.8, 0.8);
-    this.decal('forest_stones', x + 80, y + 51, 0.75, 0.8).setFlipX(true);
-    for (const [dx, dy] of [[-319, -10], [318, 10], [-370, -100], [355, -111]]) this.forestTree(x + dx, y + dy, dx < 0 ? 'birch' : 'pine', false, 1.02);
+    this.decal('forest_stones', x - 130, y + 29, 0.8, 0.8);
+    this.decal('forest_stones', x + 138, y + 46, 0.75, 0.8).setFlipX(true);
+    for (const [tx, ty, type, scale] of [[185, 535, 'oak', 1.08], [278, 521, 'pine', 1], [this.W - 180, 540, 'oak', 1.08], [this.W - 277, 522, 'birch', 1]]) {
+      this.forestTree(tx, ty, type, true, scale);
+    }
   }
 
   buildForestAir() {
@@ -338,12 +348,42 @@ class ForestWorld extends World {
     this.gateSpill.setAlpha(0.3).setScale(1.8, 0.85);
   }
 
+  isAtCastleDoor(entity) {
+    if (!entity) return false;
+    const radius = entity.radius || 12;
+    return Math.abs(entity.x - this.gate.x) <= 72 - radius &&
+      entity.y >= this.gate.y - 100 + radius && entity.y <= this.gate.y + 100;
+  }
+
   constrain(e) {
     super.constrain(e);
+    const radius = e.radius || 12, front = this.gate.y;
+    if (!this.gateOpen) {
+      e.y = Math.max(e.y, front + radius);
+    } else {
+      // Dois semiplanos de pedra deixam somente o corredor central aberto.
+      // A face traseira impede subir no telhado; os cantos usam círculo ×
+      // retângulo para deslizar pelas ombreiras sem abrir atalhos diagonais.
+      e.y = Math.max(e.y, front - 100 + radius);
+      for (const side of [-1, 1]) {
+        const edge = this.gate.x + side * 72;
+        const px = side < 0 ? Math.min(e.x, edge) : Math.max(e.x, edge);
+        const py = Math.min(e.y, front), dx = e.x - px, dy = e.y - py;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= radius * radius) continue;
+        if (d2 > 0) {
+          const d = Math.sqrt(d2), push = radius / d - 1;
+          e.x += dx * push; e.y += dy * push;
+        } else if (Math.abs(e.x - edge) < front - e.y) {
+          e.x = edge - side * radius;
+        } else {
+          e.y = front + radius;
+        }
+      }
+    }
     // Na mata os troncos alcançam a borda. A resolução dos círculos pode
     // empurrar para fora uma entidade que World já havia limitado no início.
     // O limite do mundo continua valendo depois dessas colisões também.
-    const radius = e.radius || 12;
     e.x = clamp(e.x, this.B + radius, this.W - this.B - radius);
     e.y = clamp(e.y, this.B + radius, this.H - this.B - radius);
   }

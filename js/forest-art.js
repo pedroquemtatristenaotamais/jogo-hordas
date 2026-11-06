@@ -234,81 +234,150 @@ function drawForestAssets(scene) {
     if (id === 2 || id === 5) { P.r(4, 10, 8, 1, '#888468'); P.r(5, 9, 5, 1, '#b3a77c'); }
   });
 
-  const gate = open => P => {
-    const rng = mulberry32(9981);
+  const masonry = (P, seed) => {
+    const rng = mulberry32(seed);
     const stone = (x, y, w, h, light = false) => {
-      P.r(x, y, w, h, '#223a3d'); P.r(x + 1, y + 1, w - 2, h - 2, light ? '#76877e' : '#536a65');
-      P.r(x + 1, y + 1, w - 2, 1, light ? '#acb1a0' : '#84988b');
-      P.r(x + 1, y + 2, 1, h - 3, '#7e9485'); P.r(x + w - 2, y + 2, 1, h - 3, '#324e4c');
-      if (w > 5 && rng() < 0.6) P.p(x + 3, y + 3, '#a1ad97');
+      P.r(x, y, w, h, '#233638');
+      P.r(x + 1, y + 1, w - 2, h - 2, light ? '#69796f' : ['#455b55', '#4b6059', '#3f554f'][Math.floor(rng() * 3)]);
+      P.r(x + 1, y + 1, w - 2, 1, light ? '#a8ac94' : '#78897a');
+      P.r(x + w - 2, y + 2, 1, h - 3, '#2d4541');
+      if (w > 7 && h > 5) { P.p(x + 3, y + 3, '#8a977f'); P.r(x + w - 5, y + h - 3, 3, 1, '#344b43'); }
     };
-    P.shadow(98, 116, 194);
-    // Uma fachada de entrada que emerge da mata; nenhum castelo em miniatura.
-    for (const [x0, width] of [[4, 69], [123, 69]]) {
-      P.r(x0, 45, width, 69, '#243c3d');
-      for (let row = 0; row < 10; row++) {
-        const y = 45 + row * 7, off = row % 2 * 7;
-        for (let x = x0 - off; x < x0 + width; x += 15) {
-          const left = Math.max(x0, x), right = Math.min(x0 + width, x + 15);
-          if (right - left > 2) stone(left, y, right - left, 7);
-        }
+    const panel = (x, y, w, h) => {
+      P.r(x, y, w, h, '#263c39');
+      for (let yy = y; yy < y + h; yy += 9) for (let xx = x - (Math.floor((yy - y) / 9) % 2) * 9; xx < x + w; xx += 18) {
+        const left = Math.max(x, xx), right = Math.min(x + w, xx + 18);
+        if (right - left > 2) stone(left, yy, right - left, Math.min(9, y + h - yy));
       }
-      for (let x = x0; x < x0 + width; x += 14) stone(x, 41 - (x % 3), 12, 5, true);
-      stone(x0, 111, width, 4);
-    }
-    // Profundidade do arco e da passagem.
-    P.r(75, 44, 46, 69, '#091719'); P.r(79, 35, 38, 14, '#091719');
-    P.r(85, 29, 26, 10, '#091719'); P.r(93, 25, 10, 7, '#091719');
-    for (const x of [65, 121]) {
-      for (let y = 43; y < 112; y += 9) stone(x, y, 10, 9, true);
-      stone(x - 3, 108, 16, 6, true); stone(x - 2, 41, 14, 5, true);
-    }
-    for (const [x, y, w, h] of [[72, 35, 9, 10], [78, 28, 10, 9], [86, 23, 9, 8], [94, 20, 8, 10], [102, 23, 9, 8], [110, 28, 10, 9], [116, 35, 9, 10]]) stone(x, y, w, h, true);
-    if (open) {
-      P.r(79, 47, 38, 63, '#112425'); P.r(85, 41, 26, 69, '#142b2c');
-      P.r(90, 46, 16, 64, '#1b3431'); P.r(95, 47, 6, 62, '#34443a');
-      P.r(79, 49, 7, 60, '#4f5941'); P.r(79, 50, 2, 58, '#9b9662');
-      P.r(110, 49, 7, 60, '#384d3d'); P.r(115, 50, 2, 58, '#7f8458');
-      P.r(86, 106, 24, 4, '#7b7f5a'); P.r(90, 109, 17, 2, '#b6ac76');
-    } else {
-      for (let x = 78; x < 118; x += 5) {
-        const top = x < 84 || x > 109 ? 46 : x < 90 || x > 104 ? 38 : 33;
-        P.r(x, top, 5, 111 - top, '#4b5140'); P.r(x, top, 1, 111 - top, '#828261');
-        P.r(x + 4, top, 1, 111 - top, '#263e35');
-        P.r(x + 2, 59 + (x % 9), 1, 12, '#384637');
+    };
+    const slit = (x, y) => {
+      stone(x - 2, y - 3, 10, 26, true); P.r(x + 1, y, 4, 18, '#0c2123');
+      P.r(x + 2, y + 1, 1, 14, '#3d5750'); stone(x - 3, y + 20, 12, 3, true);
+    };
+    const ivy = (x, y, length) => {
+      for (let yy = y; yy < y + length; yy += 3) {
+        x += Math.floor(rng() * 3) - 1; P.line(x, yy, x + 1, yy + 4, '#273e2d');
+        P.r(x - 2, yy, 3, 2, '#4d6845'); P.p(x - 2, yy, '#76865a');
+        if (rng() < .6) P.r(x + 2, yy + 1, 3, 2, '#37553b');
       }
-      for (const y of [58, 93]) { P.r(78, y, 40, 3, '#273e3e'); P.r(79, y, 38, 1, '#899482'); for (let x = 80; x < 118; x += 9) P.p(x, y + 1, '#c1b584'); }
-      P.r(97, 34, 2, 77, '#142d2b');
-      P.r(91, 77, 3, 5, '#c1aa6a'); P.p(92, 78, '#e6cc82'); P.r(102, 77, 3, 5, '#9e9767');
-    }
-    // Contrafortes estreitos, cornija quebrada e folhagem rasteira.
-    for (const x of [18, 44, 145, 172]) {
-      stone(x, 50, 7, 61); stone(x - 2, 106, 11, 8); stone(x - 1, 48, 9, 4, true);
-      P.r(x + 1, 53, 1, 50, '#a3ac95');
-    }
-    for (const x of [31, 155]) {
-      P.r(x, 58, 9, 20, '#233c3b'); P.r(x + 1, 57, 7, 22, '#879787');
-      P.r(x + 2, 59, 5, 18, '#122d2e'); P.r(x + 3, 60, 2, 15, '#667e71');
-      P.r(x - 1, 79, 11, 2, '#9aa28c');
-    }
-    stone(74, 112, 49, 3, true); stone(70, 115, 57, 3);
-    // Folhas de hera individuais nos blocos antigos.
-    for (const side of [-1, 1]) {
-      let x = side < 0 ? 8 : 187;
-      for (let y = 44; y < 111; y += 3) {
-        x += Math.floor(rng() * 3) - 1; P.line(x, y, x + side, y + 4, '#293f2d');
-        P.r(x - 2, y, 3, 2, '#466849'); P.p(x - 2, y, '#72855c');
-        if (rng() < 0.5) P.r(x + 2, y + 1, 3, 2, '#334f39');
-      }
-    }
-    for (let i = 0; i < 75; i++) { const x = Math.floor(rng() * 190), y = 103 + Math.floor(rng() * 12); if (x > 70 && x < 124) continue; P.r(x, y, 2, 1, '#57764c'); }
-    P.r(91, 10, 14, 7, '#3d5550'); P.r(93, 11, 10, 1, '#a6b09b');
-    P.r(96, 12, 4, 5, '#879774'); P.p(97, 11, '#d0caa5');
-    P.line(51, 45, 57, 53, '#203a39'); P.line(57, 53, 54, 59, '#203a39');
-    P.r(132, 44, 10, 2, '#739067'); P.r(136, 43, 4, 1, '#a5af81');
+    };
+    return { stone, panel, slit, ivy };
   };
-  make('gate_closed', 196, 119, gate(false), 3);
-  make('gate_open', 196, 119, gate(true), 3);
+  make('rampart', 128, 128, P => {
+    const { stone, panel, slit, ivy } = masonry(P, 7413);
+    panel(0, 29, 128, 96);
+    P.r(0, 22, 128, 7, '#233936'); stone(0, 27, 128, 4, true);
+    for (let x = 0; x < 128; x += 16) {
+      stone(x, 17, 11, 11, true); P.r(x + 1, 18, 9, 1, '#a4ab94');
+      P.r(x + 11, 25, 5, 2, '#132b2a');
+    }
+    for (const x of [10, 106]) {
+      panel(x, 37, 10, 83); stone(x - 3, 113, 16, 11); stone(x - 2, 35, 14, 5, true);
+      P.r(x + 1, 41, 1, 65, '#8a9980'); P.r(x + 8, 41, 2, 69, '#29413b');
+    }
+    slit(61, 52); ivy(33, 29, 53); ivy(93, 72, 46);
+    P.line(82, 43, 78, 49, '#1b3532'); P.line(78, 49, 82, 57, '#1b3532');
+    stone(0, 120, 128, 5); stone(0, 125, 128, 3, true);
+    for (const [x, y] of [[23, 113], [46, 119], [76, 111], [97, 120]]) {
+      P.r(x, y, 8, 2, '#47613f'); P.r(x + 2, y - 1, 4, 1, '#718253');
+    }
+  }, 3);
+  make('wall_shadow', 64, 20, P => {
+    for (let y = 0; y < 20; y++) P.r(0, y, 64, 1, 'rgba(3,12,12,' + ((20 - y) / 25) + ')');
+  });
+  make('gate_approach', 88, 65, P => {
+    for (let row = 0; row < 8; row++) {
+      const inset = row < 2 ? 9 : row * 2;
+      for (let x = inset; x < 88 - inset; x += 17) {
+        const width = Math.min(16, 88 - inset - x);
+        P.r(x, row * 8, width, 7, ['#424d3d', '#4e5742', '#454f3d'][row % 3]);
+        P.r(x + 1, row * 8, width - 2, 1, '#748069'); P.r(x + 1, row * 8 + 6, width - 2, 1, '#2c3b2e');
+      }
+    }
+  });
+  const gate = open => P => {
+    const { stone, panel, slit, ivy } = masonry(P, 9981);
+    P.shadow(128, 158, 250);
+    panel(4, 57, 248, 97); panel(66, 46, 124, 109);
+    stone(65, 43, 126, 7, true); stone(65, 53, 126, 5);
+    for (let x = 68; x < 188; x += 16) stone(x, 34, 11, 10, true);
+    // Torres de guarda ligadas às alas; suas bases não são áreas caminháveis.
+    for (const x of [17, 191]) {
+      panel(x, 24, 48, 129); stone(x - 3, 21, 54, 6, true);
+      for (let xx = x - 3; xx < x + 49; xx += 13) stone(xx, 12, 9, 11, true);
+      P.r(x + 2, 30, 2, 112, '#8a987e'); P.r(x + 43, 28, 4, 119, '#263d38');
+      slit(x + 21, 43); slit(x + 21, 99);
+      stone(x - 5, 144, 58, 11); stone(x - 6, 153, 60, 4, true);
+    }
+    // A abertura mede 48×3 = 144 pixels, a mesma largura da colisão.
+    P.r(104, 105, 48, 49, '#0b1b1d'); P.r(110, 96, 36, 12, '#0b1b1d');
+    P.r(118, 90, 20, 10, '#0b1b1d'); P.r(125, 87, 6, 5, '#0b1b1d');
+    if (open) {
+      P.r(107, 105, 42, 48, '#152b2b'); P.r(113, 101, 30, 52, '#1e3430');
+      P.r(120, 104, 16, 49, '#344439'); P.r(126, 107, 4, 44, '#59634a');
+      for (let y = 121; y < 153; y += 9) { P.r(108, y, 40, 1, '#4d5b43'); P.r(124, y + 1, 1, 8, '#182e28'); }
+      for (const x of [99, 152]) {
+        P.r(x, 105, 5, 47, '#4f5540'); P.r(x, 105, 1, 47, '#a49a66');
+        for (const y of [113, 139]) P.r(x, y, 5, 2, '#98a18b');
+      }
+    } else {
+      for (let x = 104; x < 152; x += 6) {
+        const d = Math.abs(x + 3 - 128), top = d < 6 ? 90 : d < 14 ? 95 : 103;
+        P.r(x, top, 6, 154 - top, '#51533f'); P.r(x, top, 1, 154 - top, '#8f8a60');
+        P.r(x + 5, top, 1, 154 - top, '#283e31'); P.r(x + 2, 120 + x % 7, 1, 14, '#354735');
+      }
+      for (const y of [115, 143]) {
+        P.r(104, y, 48, 4, '#283c39'); P.r(105, y, 46, 1, '#9ca38b');
+        for (let x = 107; x < 152; x += 8) P.p(x, y + 2, '#cfbc7d');
+      }
+      P.r(127, 91, 2, 62, '#172f29');
+      for (const x of [121, 133]) { P.r(x, 128, 3, 5, '#b29c60'); P.p(x + 1, 129, '#ead293'); }
+    }
+    for (const x of [93, 152]) {
+      for (let y = 104; y < 153; y += 9) stone(x, y, 11, 9, true);
+      stone(x - 3, 149, 17, 7, true);
+    }
+    for (const [x, y] of [[97, 96], [103, 87], [111, 81], [121, 77], [130, 78], [140, 83], [148, 91]]) stone(x, y, 11, 11, true);
+    stone(102, 154, 52, 3, true); stone(98, 157, 60, 3);
+    for (const x of [75, 171]) {
+      panel(x, 66, 10, 87); stone(x - 2, 64, 14, 5, true); stone(x - 3, 145, 16, 10);
+      P.r(x + 1, 71, 1, 66, '#9ca68a');
+    }
+    // Brasão gasto, correntes, rachaduras e hera sob as cornijas.
+    polygon(P, [[117, 59], [139, 59], [138, 72], [128, 79], [118, 72]], '#273d37');
+    polygon(P, [[120, 61], [136, 61], [135, 70], [128, 75], [121, 70]], '#77836b');
+    P.r(126, 63, 4, 8, '#b2ae83'); P.r(123, 65, 10, 2, '#b2ae83');
+    for (const x of [88, 166]) for (let y = 79; y < 127; y += 4) { P.r(x, y, 2, 3, '#233a36'); P.p(x, y, '#a1a58b'); }
+    ivy(7, 58, 83); ivy(245, 56, 89); ivy(62, 35, 43); ivy(191, 73, 56);
+    P.line(179, 55, 176, 61, '#1c3530'); P.line(176, 61, 180, 70, '#1c3530');
+  };
+  make('gate_closed', 256, 160, gate(false), 3);
+  make('gate_open', 256, 160, gate(true), 3);
+  make('castle_entry', 128, 112, P => {
+    const { stone, panel } = masonry(P, 6509);
+    P.shadow(64, 108, 124); panel(4, 20, 120, 87);
+    P.r(34, 48, 60, 57, '#0a1720'); P.r(40, 34, 48, 17, '#0a1720');
+    P.r(49, 25, 30, 12, '#0a1720'); P.r(58, 20, 12, 8, '#0a1720');
+    P.r(38, 49, 52, 54, '#1c2a2c'); P.r(45, 51, 38, 52, '#303b35');
+    for (let y = 69; y < 103; y += 9) {
+      P.r(38, y, 52, 1, '#5d6451'); P.r(62 + y % 2 * 8, y + 1, 1, 8, '#152626');
+    }
+    for (const x of [25, 94]) {
+      for (let y = 47; y < 104; y += 9) stone(x, y, 10, 9, true);
+      stone(x - 3, 100, 16, 8, true);
+    }
+    for (const [x, y] of [[29, 39], [35, 29], [44, 21], [54, 15], [64, 15], [74, 20], [83, 28], [89, 38]]) stone(x, y, 11, 11, true);
+    // As folhas da porta ficam dobradas nas laterais, com o centro livre.
+    for (const x of [16, 102]) {
+      P.r(x, 46, 10, 55, '#484638'); P.r(x + 1, 47, 2, 52, '#968268');
+      for (const y of [57, 88]) { P.r(x, y, 10, 3, '#253840'); P.r(x + 1, y, 8, 1, '#a2a8a0'); }
+    }
+    for (const x of [5, 113]) {
+      stone(x, 23, 10, 81); stone(x - 2, 19, 14, 6, true); stone(x - 2, 99, 14, 9);
+    }
+    stone(32, 105, 64, 4, true); stone(28, 109, 72, 3);
+    P.r(59, 4, 10, 7, '#788477'); P.r(62, 5, 4, 5, '#c0b996');
+  });
   make('bramble', 66, 34, P => {
     const rng = mulberry32(6451);
     for (let i = 0; i < 15; i++) {

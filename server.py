@@ -213,6 +213,7 @@ class GameApplication:
                     state TEXT NOT NULL DEFAULT 'started' CHECK(state IN ('started','finished','abandoned')),
                     settings_json TEXT NOT NULL, session_hash TEXT, difficulty TEXT NOT NULL DEFAULT 'medium',
                     start_stage TEXT NOT NULL DEFAULT 'castle', current_stage TEXT NOT NULL DEFAULT 'castle', advanced_at REAL,
+                    forest_cleared INTEGER NOT NULL DEFAULT 0, castle_cleared INTEGER NOT NULL DEFAULT 0,
                     kills INTEGER, damage REAL, duration REAL, level INTEGER,
                     victory INTEGER, points INTEGER
                 );
@@ -236,7 +237,13 @@ class GameApplication:
                                       ('current_stage', "TEXT NOT NULL DEFAULT 'castle'"), ('advanced_at', 'REAL')):
                 if name not in columns:
                     db.execute(f'ALTER TABLE runs ADD COLUMN {name} {declaration}')
+            migrate_progress = 'forest_cleared' not in columns or 'castle_cleared' not in columns
+            for name in ('forest_cleared', 'castle_cleared'):
+                if name not in columns:
+                    db.execute(f'ALTER TABLE runs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
             db.execute("UPDATE runs SET state='abandoned',ranked=0 WHERE state='started' AND session_hash IS NULL")
+            if migrate_progress:
+                self.migrate_progress(db)
             db.execute('CREATE INDEX IF NOT EXISTS run_session ON runs(session_hash,state)')
             db.execute('INSERT OR IGNORE INTO settings(id,value_json) VALUES(1,?)',
                        (json.dumps(DEFAULT_SETTINGS),))
@@ -266,6 +273,59 @@ class GameApplication:
     def settings(self, db):
         return json.loads(db.execute('SELECT value_json FROM settings WHERE id=1').fetchone()[0])
 
+    def migrate_progress(self, db):
+        # Os marcos são gravados uma vez, sem alterar os resultados históricos.
+        rows = db.execute('''SELECT r.* FROM runs r JOIN users u ON u.id=r.user_id
+            WHERE u.role='player' AND r.practice=0''').fetchall()
+        for run in rows:
+            try:
+                settings = json.loads(run['settings_json'])
+                boss_time = number(settings['bossTime'], 'bossTime', *SETTING_LIMITS['bossTime'])
+                started = number(run['started_at'], 'started_at', 0, math.inf)
+            except (APIError, ValueError, TypeError, KeyError):
+                continue
+            forest_cleared = False
+            if run['start_stage'] == 'forest' and run['current_stage'] == 'castle':
+                try:
+                    advanced = number(run['advanced_at'], 'advanced_at', started, time.time())
+                    forest_cleared = advanced - started + 10 >= boss_time
+                except APIError:
+                    pass
+            castle_cleared = False
+            if run['state'] == 'finished' and run['victory'] == 1 and run['current_stage'] == 'castle':
+                try:
+                    finished = number(run['finished_at'], 'finished_at', started, time.time())
+                    duration = number(run['duration'], 'duration', 0, 14_400)
+                    kills = number(run['kills'], 'kills', 0, 1_000_000, True)
+                    damage = number(run['damage'], 'damage', 0, 1_000_000_000)
+                    number(run['level'], 'level', 1, 100, True)
+                    required = boss_time * (2 if run['start_stage'] == 'forest' else 1)
+                    castle_cleared = (run['hero'] in HEROES and run['start_stage'] in STAGES
+                        and finished - started <= 86_400 and duration <= finished - started + 10
+                        and duration + 1 >= required and kills <= duration * 60 + 240
+                        and damage <= duration * 50_000 + 10_000
+                        and (run['start_stage'] == 'castle'
+                             or forest_cleared and finished - advanced + 1 >= boss_time))
+                except APIError:
+                    pass
+            db.execute('UPDATE runs SET forest_cleared=?,castle_cleared=? WHERE id=?',
+                       (int(forest_cleared), int(castle_cleared), run['id']))
+
+    def profile(self, db, user):
+        progress = {'castle_unlocked': False, 'forest_clears': 0, 'castle_clears': 0}
+        stats = {'runs': 0, 'victories': 0, 'kills': 0, 'damage': 0, 'points': 0, 'best_points': 0}
+        if user and user['role'] == 'player':
+            clears = db.execute('''SELECT COALESCE(SUM(forest_cleared),0),COALESCE(SUM(castle_cleared),0)
+                FROM runs WHERE user_id=? AND practice=0''', (user['id'],)).fetchone()
+            progress = {'castle_unlocked': bool(clears[0] or clears[1]),
+                        'forest_clears': clears[0], 'castle_clears': clears[1]}
+            stats = dict(db.execute('''SELECT COUNT(*) AS runs,COALESCE(SUM(victory),0) AS victories,
+                COALESCE(SUM(kills),0) AS kills,COALESCE(SUM(damage),0) AS damage,
+                COALESCE(SUM(points),0) AS points,COALESCE(MAX(points),0) AS best_points
+                FROM runs WHERE user_id=? AND state='finished' AND ranked=1 AND practice=0''',
+                (user['id'],)).fetchone())
+        return {'progress': progress, 'stats': stats}
+
     def session(self, db, cookie_header):
         try:
             cookie = SimpleCookie()
@@ -282,7 +342,7 @@ class GameApplication:
 
     def session_payload(self, db, user):
         return {'user': ({key: user[key] for key in ('id', 'username', 'role')} if user else None),
-                'csrf': user['csrf'] if user else None, 'settings': self.settings(db)}
+                'csrf': user['csrf'] if user else None, 'settings': self.settings(db), **self.profile(db, user)}
 
     def new_session(self, db, user_id, previous=None):
         now = time.time()
@@ -451,7 +511,7 @@ class GameApplication:
                         result = {'ok': True}
                     elif method == 'POST' and path == '/api/runs/start':
                         require_fields(body, ('hero', 'practice'), ('difficulty', 'stage'))
-                        stage = body.get('stage', 'castle')
+                        stage = body.get('stage', 'forest')
                         if not isinstance(stage, str) or stage not in STAGES:
                             raise APIError(400, 'Fase inválida.')
                         difficulty = body.get('difficulty', 'medium')
@@ -461,6 +521,8 @@ class GameApplication:
                         if not isinstance(hero, str) or hero not in HEROES:
                             raise APIError(400, 'Personagem desconhecido.')
                         practice = boolean(body['practice'], 'practice')
+                        if stage == 'castle' and user['role'] != 'admin' and not self.profile(db, user)['progress']['castle_unlocked']:
+                            raise APIError(403, 'Conclua a floresta para desbloquear o castelo.')
                         self.limiter.check(('run-start', user['id']), 40, 600)
                         settings = self.settings(db)
                         ranked = user['role'] == 'player' and not practice and settings == DEFAULT_SETTINGS
@@ -484,10 +546,12 @@ class GameApplication:
                         # Idempotência permite repetir uma resposta perdida sem avançar duas vezes.
                         if run['current_stage'] == 'forest':
                             settings = json.loads(run['settings_json'])
-                            if run['ranked'] and time.time() - run['started_at'] + 10 < settings['bossTime']:
+                            if not run['practice'] and user['role'] == 'player' and time.time() - run['started_at'] + 10 < settings['bossTime']:
                                 raise APIError(400, 'A floresta ainda não foi concluída.')
-                            db.execute("UPDATE runs SET current_stage='castle',advanced_at=? WHERE id=?", (time.time(), run_id))
-                        result = {'stage': 'castle', 'run_id': run_id}
+                            cleared = not run['practice'] and user['role'] == 'player'
+                            db.execute("UPDATE runs SET current_stage='castle',advanced_at=?,forest_cleared=? WHERE id=?",
+                                       (time.time(), int(cleared), run_id))
+                        result = {'stage': 'castle', 'run_id': run_id, **self.profile(db, user)}
                     elif method == 'POST' and path == '/api/runs/finish':
                         require_fields(body, ('run_id', 'kills', 'damage', 'duration', 'hero', 'level', 'victory'))
                         run_id = body['run_id']
@@ -517,15 +581,17 @@ class GameApplication:
                         required = settings['bossTime'] * (2 if run['start_stage'] == 'forest' else 1)
                         if victory and (duration + 1 < required or run['current_stage'] != 'castle'):
                             raise APIError(400, 'Vitória antes de concluir as fases e o chefe final.')
-                        if victory and run['start_stage'] == 'forest' and (run['advanced_at'] is None or run['ranked'] and now - run['advanced_at'] + 1 < settings['bossTime']):
+                        if victory and run['start_stage'] == 'forest' and (run['advanced_at'] is None or
+                                not run['practice'] and user['role'] == 'player' and now - run['advanced_at'] + 1 < settings['bossTime']):
                             raise APIError(400, 'O chefe do castelo ainda não poderia ter surgido.')
                         base_points = kills * 100 + math.floor(damage) * 2 + math.floor(duration) * 10 + (5000 if victory else 0)
                         points = math.floor(base_points * DIFFICULTY_SCORES[run['difficulty']])
                         ranked = bool(run['ranked'] and user['role'] == 'player')
+                        cleared = victory and not run['practice'] and user['role'] == 'player'
                         db.execute('''UPDATE runs SET state='finished',finished_at=?,kills=?,damage=?,duration=?,level=?,
-                            victory=?,points=?,ranked=? WHERE id=? AND state='started' ''',
-                            (now, kills, damage, duration, level, int(victory), points, int(ranked), run_id))
-                        result = {'saved': True, 'ranked': ranked, 'points': points}
+                            victory=?,points=?,ranked=?,castle_cleared=? WHERE id=? AND state='started' ''',
+                            (now, kills, damage, duration, level, int(victory), points, int(ranked), int(cleared), run_id))
+                        result = {'saved': True, 'ranked': ranked, 'points': points, **self.profile(db, user)}
                     elif method == 'GET' and path == '/api/admin/users':
                         search_values = query.get('search', [''])
                         if len(search_values) != 1 or len(search_values[0]) > 80:

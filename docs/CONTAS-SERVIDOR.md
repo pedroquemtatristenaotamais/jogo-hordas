@@ -160,8 +160,8 @@ python3 tests/browser_accounts.py --expansion
 
 ## Campanha Floresta → Castelo
 
-O frontend inicia a campanha com `stage:"forest"`. Para compatibilidade,
-`/api/runs/start` sem stage continua criando uma partida de castelo isolado.
+O frontend inicia a campanha com `stage:"forest"`.
+`/api/runs/start` sem stage também começa na floresta.
 IDs permitidos: `forest` e `castle`; a resposta inclui stage. Resultados
 antigos ganham `start_stage/current_stage="castle"`, sem alteração de pontos.
 
@@ -180,3 +180,19 @@ compatível de clientes antigos; o frontend sempre envia o percurso escolhido.
 A conta, a dificuldade e as regras do início continuam vinculadas à run.
 
 Veja [FLORESTA.md](FLORESTA.md) para a experiência das duas fases.
+
+## Perfil e acesso às fases
+
+Sessão, login, cadastro, avanço e conclusão incluem `progress` e `stats`.
+Progresso tem `castle_unlocked`, `forest_clears` e `castle_clears`; estatísticas
+têm `runs`, `victories`, `kills`, `damage`, `points` e `best_points`, agregando
+resultados classificados concluídos da conta atual em todas as dificuldades.
+
+O Castelo exige um marco válido anterior; `403` conserva a sessão e a partida
+aberta. Avanço e vitória não-prática de jogador gravam marcos na transação
+existente, sem duplicar na repetição. Regras personalizadas também exigem
+tempos de fase válidos. Admin escolhe qualquer fase, sem ganhar progresso.
+A migração acrescenta colunas em runs e aproveita conquistas históricas
+legítimas, preservando usuários, hashes, sessões e resultados.
+
+Detalhes de seleção, checkpoint e cutscene em [JORNADA.md](JORNADA.md).

@@ -84,14 +84,223 @@ class BackendTests(unittest.TestCase):
             db.execute('UPDATE runs SET started_at=started_at-? WHERE id=?', (seconds, run_id))
 
     def start(self, practice=False):
-        status, data, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': practice})
+        status, data, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': practice, 'stage': 'castle'})
         self.assertEqual(status, 200, data)
         return data
+
+    def unlock_castle(self):
+        status, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': 'forest'})
+        self.assertEqual(status, 200, run)
+        self.age(run['run_id'], 901)
+        status, advanced, _ = self.request('/api/runs/advance', {'run_id': run['run_id']})
+        self.assertEqual(status, 200, advanced)
+        self.assertTrue(advanced['progress']['castle_unlocked'])
 
     def finish(self, run_id, **kwargs):
         payload = dict(run_id=run_id, kills=12, damage=123.9, duration=15.4, hero='vanguard', level=3, victory=False)
         payload.update(kwargs)
         return self.request('/api/runs/finish', payload)
+
+    def assert_empty_profile(self, data):
+        self.assertEqual(data.get('progress'), {
+            'castle_unlocked': False, 'forest_clears': 0, 'castle_clears': 0})
+        self.assertEqual(data.get('stats'), {
+            'runs': 0, 'victories': 0, 'kills': 0, 'damage': 0, 'points': 0, 'best_points': 0})
+
+    def test_profile_defaults_for_anonymous_and_new_account(self):
+        self.assert_empty_profile(self.request('/api/session')[1])
+        registered, _ = self.register()
+        self.assert_empty_profile(registered)
+        self.assert_empty_profile(self.request('/api/session')[1])
+
+    def test_run_start_omitted_stage_defaults_to_forest(self):
+        self.register()
+        status, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False})
+        self.assertEqual(status, 200, run)
+        self.assertEqual(run['stage'], 'forest')
+
+    def test_castle_lock_preserves_session_and_current_run_including_practice(self):
+        registered, _ = self.register()
+        status, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': 'forest'})
+        self.assertEqual(status, 200, run)
+        for practice in (False, True):
+            status, error, headers = self.request('/api/runs/start', {
+                'hero': 'vanguard', 'practice': practice, 'stage': 'castle'})
+            self.assertEqual(status, 403, error)
+            self.assertNotIn('Set-Cookie', headers)
+            session = self.request('/api/session')[1]
+            self.assertEqual(session['user']['id'], registered['user']['id'])
+            self.assertEqual(session['csrf'], registered['csrf'])
+            self.assert_empty_profile(session)
+        with self.httpd.app.connect() as db:
+            self.assertEqual(db.execute('SELECT state FROM runs WHERE id=?', (run['run_id'],)).fetchone()[0], 'started')
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM runs').fetchone()[0], 1)
+
+    def test_progress_advance_and_victory_are_counted_once_and_survive_account_switch(self):
+        registered, _ = self.register()
+        _, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': 'forest'})
+        self.age(run['run_id'], 901)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            advances = list(pool.map(lambda _: self.request('/api/runs/advance', {'run_id': run['run_id']}), range(2)))
+        for status, advanced, _ in advances:
+            self.assertEqual(status, 200, advanced)
+            self.assertEqual(advanced.get('progress'), {
+                'castle_unlocked': True, 'forest_clears': 1, 'castle_clears': 0})
+            self.assertEqual(advanced.get('stats', {}).get('runs'), 0)
+        self.age(run['run_id'], 901)
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE runs SET advanced_at=advanced_at-901 WHERE id=?', (run['run_id'],))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            finishes = list(pool.map(lambda _: self.finish(run['run_id'], duration=1801, victory=True), range(2)))
+        self.assertEqual(sorted(status for status, _, _ in finishes), [200, 409])
+        finished = next(data for status, data, _ in finishes if status == 200)
+        profile = {'castle_unlocked': True, 'forest_clears': 1, 'castle_clears': 1}
+        self.assertEqual(finished.get('progress'), profile)
+        self.assertEqual(finished.get('stats'), {
+            'runs': 1, 'victories': 1, 'kills': 12, 'damage': 123.9, 'points': 24456, 'best_points': 24456})
+        app = self.module.GameApplication(ROOT, self.private)
+        with app.connect() as db:
+            persisted = app.session_payload(db, app.session(db, self.cookie))
+        self.assertEqual(persisted['progress'], profile)
+        self.assertEqual(persisted['stats'], finished['stats'])
+        self.request('/api/logout', {})
+        second, _ = self.register('PlayerTwo')
+        self.assertNotEqual(registered['user']['id'], second['user']['id'])
+        self.assert_empty_profile(second)
+        self.assertEqual(self.request('/api/runs/start', {
+            'hero': 'vanguard', 'practice': False, 'stage': 'castle'})[0], 403)
+        self.assert_empty_profile(self.admin())
+        status, logged_in, _ = self.request('/api/login', {'username': 'PlayerOne', 'password': 'SamplePass!2026'})
+        self.assertEqual(status, 200, logged_in)
+        self.assertEqual(logged_in['progress'], profile)
+        self.assertEqual(logged_in['stats'], finished['stats'])
+        self.assertEqual(self.request('/api/runs/start', {
+            'hero': 'vanguard', 'practice': True, 'stage': 'castle'})[0], 200)
+
+    def test_custom_rules_require_valid_stage_times_and_grant_progress_without_ranked_stats(self):
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE settings SET value_json=? WHERE id=1', (
+                json.dumps({**self.module.DEFAULT_SETTINGS, 'bossTime': 30}),))
+        self.register()
+        _, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': 'forest'})
+        self.assertFalse(run['ranked'])
+        self.assertEqual(self.request('/api/runs/advance', {'run_id': run['run_id']})[0], 400)
+        self.age(run['run_id'], 31)
+        status, advanced, _ = self.request('/api/runs/advance', {'run_id': run['run_id']})
+        self.assertEqual(status, 200, advanced)
+        self.assertEqual(advanced.get('progress'), {
+            'castle_unlocked': True, 'forest_clears': 1, 'castle_clears': 0})
+        self.assertEqual(self.finish(run['run_id'], duration=60, victory=True)[0], 400)
+        self.age(run['run_id'], 31)
+        # Total elapsed alone cannot prove that the castle itself was completed.
+        self.assertEqual(self.finish(run['run_id'], duration=61, victory=True)[0], 400)
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE runs SET advanced_at=advanced_at-31 WHERE id=?', (run['run_id'],))
+        status, finished, _ = self.finish(run['run_id'], duration=61, victory=True)
+        self.assertEqual(status, 200, finished)
+        self.assertFalse(finished['ranked'])
+        self.assertEqual(finished.get('progress'), {
+            'castle_unlocked': True, 'forest_clears': 1, 'castle_clears': 1})
+        self.assertEqual(finished.get('stats'), {
+            'runs': 0, 'victories': 0, 'kills': 0, 'damage': 0, 'points': 0, 'best_points': 0})
+
+    def test_practice_and_admin_results_do_not_grant_player_progress(self):
+        self.register()
+        _, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': True, 'stage': 'forest'})
+        status, advanced, _ = self.request('/api/runs/advance', {'run_id': run['run_id']})
+        self.assertEqual(status, 200, advanced)
+        self.assert_empty_profile(advanced)
+        self.age(run['run_id'], 1801)
+        with self.httpd.app.connect() as db:
+            db.execute('UPDATE runs SET advanced_at=advanced_at-901 WHERE id=?', (run['run_id'],))
+        status, finished, _ = self.finish(run['run_id'], duration=1800, victory=True)
+        self.assertEqual(status, 200, finished)
+        self.assert_empty_profile(finished)
+        self.assert_empty_profile(self.admin())
+        for stage in ('forest', 'castle'):
+            status, run, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': stage})
+            self.assertEqual(status, 200, run)
+            self.assertFalse(run['ranked'])
+            self.age(run['run_id'], 901)
+            if stage == 'forest':
+                self.assert_empty_profile(self.request('/api/runs/advance', {'run_id': run['run_id']})[1])
+                self.age(run['run_id'], 901)
+                with self.httpd.app.connect() as db:
+                    db.execute('UPDATE runs SET advanced_at=advanced_at-901 WHERE id=?', (run['run_id'],))
+            status, finished, _ = self.finish(run['run_id'], duration=1800 if stage == 'forest' else 900, victory=True)
+            self.assertEqual(status, 200, finished)
+            self.assert_empty_profile(finished)
+        self.httpd.app.initialize()
+        self.assert_empty_profile(self.request('/api/session')[1])
+
+    def test_stats_sum_all_completed_ranked_runs_across_difficulties(self):
+        self.register()
+        _, forest, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': False, 'stage': 'forest'})
+        self.age(forest['run_id'], 901)
+        self.assertEqual(self.request('/api/runs/advance', {'run_id': forest['run_id']})[0], 200)
+        for difficulty, victory, duration, kills, damage, points in (
+                ('medium', False, 20, 2, 10.5, 420), ('easy', True, 900, 3, 20.25, 10755)):
+            status, run, _ = self.request('/api/runs/start', {
+                'hero': 'vanguard', 'practice': False, 'stage': 'castle', 'difficulty': difficulty})
+            self.assertEqual(status, 200, run)
+            self.age(run['run_id'], duration + 1)
+            status, finished, _ = self.finish(run['run_id'], duration=duration, kills=kills, damage=damage, victory=victory)
+            self.assertEqual(status, 200, finished)
+            self.assertEqual(finished['points'], points)
+        _, practice, _ = self.request('/api/runs/start', {'hero': 'vanguard', 'practice': True, 'stage': 'castle'})
+        self.age(practice['run_id'], 21)
+        self.assertEqual(self.finish(practice['run_id'], duration=20, kills=99, damage=99)[0], 200)
+        stats = self.request('/api/session')[1].get('stats')
+        self.assertEqual(stats, {'runs': 2, 'victories': 1, 'kills': 5, 'damage': 30.75, 'points': 11175, 'best_points': 10755})
+
+    def test_profile_migration_accepts_legitimate_legacy_results_without_rewriting_accounts_or_scores(self):
+        registered, _ = self.register()
+        player_id = registered['user']['id']
+        with self.httpd.app.connect() as db:
+            original_hash = db.execute('SELECT password_hash FROM users WHERE id=?', (player_id,)).fetchone()[0]
+            admin_id = db.execute("SELECT id FROM users WHERE role='admin'").fetchone()[0]
+        for has_stages in (False, True):
+            with self.subTest(has_stages=has_stages):
+                private = Path(self.tmp.name) / ('legacy-stages' if has_stages else 'legacy-castle')
+                private.mkdir(mode=0o700)
+                with self.httpd.app.connect() as source, sqlite3.connect(private / 'jogo.sqlite3') as db:
+                    source.backup(db)
+                    db.execute('DROP TABLE runs')
+                    stage_columns = ",start_stage TEXT NOT NULL DEFAULT 'castle',current_stage TEXT NOT NULL DEFAULT 'castle',advanced_at REAL" if has_stages else ''
+                    db.execute('''CREATE TABLE runs (
+                        id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,hero TEXT NOT NULL,
+                        practice INTEGER NOT NULL,ranked INTEGER NOT NULL,started_at REAL NOT NULL,
+                        finished_at REAL,state TEXT NOT NULL,settings_json TEXT NOT NULL,
+                        kills INTEGER,damage REAL,duration REAL,level INTEGER,victory INTEGER,points INTEGER
+                    ''' + stage_columns + ')')
+                    for run_id, owner, practice, ranked, duration, finished_at, points in (
+                            ('a' * 32, player_id, 0, 1, 1801 if has_stages else 900, 2802 if has_stages else 1901, 24456 if has_stages else 15446),
+                            ('b' * 32, player_id, 1, 0, 1801 if has_stages else 900, 2802 if has_stages else 1901, 123),
+                            ('c' * 32, player_id, 0, 0, 1, 1002, 456),
+                            ('d' * 32, admin_id, 0, 0, 1801 if has_stages else 900, 2802 if has_stages else 1901, 789)):
+                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,finished_at,state,
+                            settings_json,kills,damage,duration,level,victory,points)
+                            VALUES(?,?,'vanguard',?,?,1000,?,'finished',?,12,123.9,?,3,1,?)''',
+                            (run_id, owner, practice, ranked, finished_at, json.dumps(self.module.DEFAULT_SETTINGS), duration, points))
+                        if has_stages:
+                            db.execute("UPDATE runs SET start_stage='forest',current_stage='castle',advanced_at=? WHERE id=?",
+                                       (1001 if run_id == 'c' * 32 else 1901, run_id))
+                    if has_stages:
+                        db.execute('''INSERT INTO runs(id,user_id,hero,practice,ranked,started_at,finished_at,state,
+                            settings_json,kills,damage,duration,level,victory,points,start_stage,current_stage,advanced_at)
+                            VALUES(?,?,'vanguard',0,0,1000,1062,'finished',?,1,0,61,1,1,5710,'forest','castle',1031)''',
+                            ('e' * 32, player_id, json.dumps({**self.module.DEFAULT_SETTINGS, 'bossTime': 30})))
+                    previous_results = db.execute('SELECT id,points FROM runs ORDER BY id').fetchall()
+                app = self.module.GameApplication(ROOT, private)
+                app.initialize()
+                with app.connect() as db:
+                    profile = app.session_payload(db, app.session(db, self.cookie))
+                    self.assertEqual(profile.get('progress'), {
+                        'castle_unlocked': True, 'forest_clears': 2 if has_stages else 0, 'castle_clears': 2 if has_stages else 1})
+                    self.assertEqual(profile.get('stats', {}).get('runs'), 1)
+                    self.assertEqual(db.execute('SELECT password_hash FROM users WHERE id=?', (player_id,)).fetchone()[0], original_hash)
+                    self.assertEqual([tuple(row) for row in db.execute('SELECT id,points FROM runs ORDER BY id')], previous_results)
+                    self.assertEqual(db.execute('SELECT start_stage FROM runs WHERE id=?', ('a' * 32,)).fetchone()[0], 'forest' if has_stages else 'castle')
 
     def test_session_hash_password_validation_and_cookie(self):
         status, data, _ = self.request('/api/session')
@@ -127,13 +336,16 @@ class BackendTests(unittest.TestCase):
     def test_scores_compute_points_reject_replay_and_unreal_time(self):
         self.assertEqual(self.request('/api/runs/start', {'hero':'vanguard', 'practice':False})[0], 401)
         self.register()
+        self.unlock_castle()
         run = self.start()
         self.assertTrue(run['ranked'])
         self.assertEqual(self.finish(run['run_id'], duration=9999)[0], 400)
         self.age(run['run_id'], 30)
         status, data, _ = self.finish(run['run_id'])
         self.assertEqual(status, 200, data)
-        self.assertEqual(data, {'saved': True, 'ranked': True, 'points': 1596})
+        self.assertEqual(data, {'saved': True, 'ranked': True, 'points': 1596,
+            'progress': {'castle_unlocked': True, 'forest_clears': 1, 'castle_clears': 0},
+            'stats': {'runs': 1, 'victories': 0, 'kills': 12, 'damage': 123.9, 'points': 1596, 'best_points': 1596}})
         self.assertEqual(self.finish(run['run_id'])[0], 409)
         entries = self.request('/api/leaderboard?sort=points')[1]['entries']
         self.assertEqual(len(entries), 1)
@@ -146,6 +358,7 @@ class BackendTests(unittest.TestCase):
 
     def test_scores_reject_other_owner_bad_numbers_and_hero(self):
         self.register()
+        self.unlock_castle()
         original_cookie, original_csrf = self.cookie, self.csrf
         run = self.start()
         self.request('/api/logout', {})
@@ -163,6 +376,7 @@ class BackendTests(unittest.TestCase):
         for logout_first in (False, True):
             if not self.cookie:
                 self.register()
+                self.unlock_castle()
             else:
                 self.request('/api/login', {'username':'PlayerOne','password':'SamplePass!2026'})
             run = self.start()
@@ -178,6 +392,7 @@ class BackendTests(unittest.TestCase):
 
     def test_run_finish_requires_original_session_even_for_same_account(self):
         self.register()
+        self.unlock_castle()
         original_cookie, original_csrf = self.cookie,self.csrf
         run = self.start(); self.age(run['run_id'],30)
         self.cookie=''; self.csrf=None
@@ -188,6 +403,7 @@ class BackendTests(unittest.TestCase):
 
     def test_registering_another_account_invalidates_previous_session_run(self):
         self.register()
+        self.unlock_castle()
         run=self.start(); self.age(run['run_id'],30)
         self.register('PlayerTwo')
         self.assertEqual(self.request('/api/login',{'username':'PlayerOne','password':'SamplePass!2026'})[0],200)
@@ -215,8 +431,9 @@ class BackendTests(unittest.TestCase):
 
     def test_difficulty_is_bound_to_run_and_rankings_are_separate(self):
         self.register()
+        self.unlock_castle()
         for difficulty, multiplier in [('easy', .75), ('medium', 1), ('hard', 1.5), ('hardcore', 2.5)]:
-            status, run, _ = self.request('/api/runs/start', {'hero':'vanguard','practice':False,'difficulty':difficulty})
+            status, run, _ = self.request('/api/runs/start', {'hero':'vanguard','practice':False,'difficulty':difficulty,'stage':'castle'})
             self.assertEqual(status, 200, run)
             self.assertEqual(run['difficulty'], difficulty)
             self.assertEqual(run['settings']['bossTime'], 900)
@@ -277,12 +494,13 @@ class BackendTests(unittest.TestCase):
 
     def test_campaign_stage_validation_and_practice(self):
         self.register()
+        self.unlock_castle()
         self.assertEqual(self.request('/api/runs/start',{'hero':'mage','practice':False,'stage':'bogus'})[0],400)
         self.assertEqual(self.request('/api/leaderboard?stage=bogus')[0],400)
         self.assertEqual(self.request('/api/leaderboard?stage=forest&stage=castle')[0],400)
-        legacy=self.start()
-        self.assertEqual(legacy['stage'],'castle')
-        self.assertEqual(self.request('/api/runs/advance',{'run_id':legacy['run_id']})[0],400)
+        castle=self.start()
+        self.assertEqual(castle['stage'],'castle')
+        self.assertEqual(self.request('/api/runs/advance',{'run_id':castle['run_id']})[0],400)
         status,run,_=self.request('/api/runs/start',{'hero':'mage','practice':True,'stage':'forest'})
         self.assertEqual(status,200,run)
         self.assertFalse(run['ranked'])
@@ -297,6 +515,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.request('/api/admin/settings',settings)[0],200)
         self.assertEqual(self.request('/api/logout',{})[0],200)
         self.register()
+        self.unlock_castle()
         run=self.start()
         self.assertEqual(run.get('settings'),settings)
         self.assertFalse(run['ranked'])
@@ -321,6 +540,7 @@ class BackendTests(unittest.TestCase):
 
     def test_leaderboard_best_per_user_sort_and_admin_exclusion(self):
         self.register()
+        self.unlock_castle()
         for kills, damage in ((15,100), (2,1000)):
             r = self.start(); self.age(r['run_id'],30)
             self.assertEqual(self.finish(r['run_id'],kills=kills,damage=damage)[0],200)
@@ -336,6 +556,7 @@ class BackendTests(unittest.TestCase):
 
     def test_admin_ban_revokes_sessions_and_hides_scores(self):
         user, _ = self.register()
+        self.unlock_castle()
         r = self.start(); self.age(r['run_id'],30); self.finish(r['run_id'])
         user_cookie = self.cookie
         self.cookie=''; self.csrf=None
@@ -372,6 +593,7 @@ class BackendTests(unittest.TestCase):
 
     def test_concurrent_finish_saves_once_and_password_revokes_other_session(self):
         self.register()
+        self.unlock_castle()
         other_cookie = self.cookie
         self.cookie = ''; self.csrf = None
         self.request('/api/login', {'username':'PlayerOne','password':'SamplePass!2026'})
@@ -386,6 +608,7 @@ class BackendTests(unittest.TestCase):
 
     def test_persists_account_sessions_settings_without_reseeding_admin(self):
         self.register()
+        self.unlock_castle()
         r=self.start(); self.age(r['run_id'],30); self.finish(r['run_id'])
         existing = (self.private/'admin-inicial.json').read_bytes()
         app = self.module.GameApplication(ROOT,self.private)

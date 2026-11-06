@@ -45,10 +45,13 @@ class World {
     return false;
   }
   inCastle(x, y) { return y < this.castleBottom + 60 && Math.abs(x - 2000) < 520; }
+  inCastleEntry(x, y, pad = 0) {
+    return !!this.entry && Math.abs(x - this.entry.x) < 120 + pad && y > this.entry.endY - 80 - pad;
+  }
   nearStart(x, y) { const s = CONFIG.player.start; return Math.hypot(x - s.x, y - s.y) < 260; }
   free(x, y, padPath, padArena, spacing) {
     if (x < this.B + 60 || x > this.W - this.B - 60 || y < this.B + 60 || y > this.H - this.B - 60) return false;
-    if (this.onPath(x, y, padPath) || this.inArena(x, y, padArena) || this.inCastle(x, y) || this.nearStart(x, y)) return false;
+    if (this.onPath(x, y, padPath) || this.inArena(x, y, padArena) || this.inCastle(x, y) || this.inCastleEntry(x, y, spacing || 0) || this.nearStart(x, y)) return false;
     if (spacing) for (const o of this.placed) if (Math.abs(o.x - x) < spacing && Math.abs(o.y - y) < spacing && Math.hypot(o.x - x, o.y - y) < spacing) return false;
     return true;
   }
@@ -83,6 +86,9 @@ class World {
   // ---------- construção ----------
   build() {
     const s = this.scene, W = this.W, H = this.H, B = this.B, A = this.A;
+    // Fica neste build, pois ForestWorld sobrescreve a construção do mapa.
+    // Nem a porta sul nem sua reserva devem nascer no construtor compartilhado.
+    this.entry = { x: W / 2, startY: H - B - 44, endY: H - B - 210 };
 
     SPR.canvas(s, 'blotch', 128, 128, (g) => {
       const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -133,7 +139,21 @@ class World {
     this.buildPlazas();
     this.buildScatter();
     this.buildTorches();
+    this.buildCastleEntry();
     this.buildAtmosphere();
+  }
+
+  buildCastleEntry() {
+    const x = this.entry.x, y = this.H - this.B;
+    // Vista de dentro da mesma porta atravessada na floresta. O piso claro
+    // conduz ao pátio; o arco fica atrás do herói durante sua chegada.
+    this.scene.add.tileSprite(x, (this.entry.endY + y) / 2, 170, y - this.entry.endY + 20, 'path').setDepth(-9480);
+    this.prop('forest_castle_entry', x, y + 38, { tint: 0xe0d5df }).setDepth(this.entry.endY - 1);
+    for (const side of [-1, 1]) {
+      this.prop('banner', x + side * 204, y - 26);
+      this.torch(x + side * 151, y - 25);
+    }
+    this.decal('dungeon_fire_glow', x, y - 44, 1.1, 0.1).setScale(1.4, 0.55).setBlendMode(Phaser.BlendModes.ADD);
   }
 
   buildNorthHall() {
@@ -191,7 +211,7 @@ class World {
     n = 0; tries = 0;
     while (n < 120 && tries++ < 1200) {
       const x = r(this.B + 40, this.W - this.B - 40), y = r(this.B + 40, this.H - this.B - 40);
-      if (this.inCastle(x, y)) continue;
+      if (this.inCastle(x, y) || this.inCastleEntry(x, y)) continue;
       this.decal(rng() < 0.5 ? 'rubble' : 'bones', x, y, 1, 0.95).setFlipX(rng() < 0.5);
       n++;
     }

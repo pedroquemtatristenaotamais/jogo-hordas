@@ -1,5 +1,8 @@
 # Retomada — campanha Floresta → Castelo
 
+Atualização atual: seleção de fases, progresso por conta, entrada física,
+retry na fase atual e cutscene final. Estado em [JORNADA.md](JORNADA.md).
+
 Atualização em 06/11: quatro criaturas adicionais (Javali Musgoso, Serpente do
 Lodo, Corvo das Ruínas e Sentinela de Espinhos), totalizando doze espécies comuns.
 Arte original com quatro quadros, desbloqueios graduais, quatro ondas próprias

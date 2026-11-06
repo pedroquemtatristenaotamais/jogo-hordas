@@ -9,6 +9,7 @@ class GameScene extends Phaser.Scene {
   init(data = {}) {
     this.charId = CHARACTERS[data.char] ? data.char : 'vanguard';
     this.carry = data.carry || null;
+    this.checkpoint = data.checkpoint || null;
     this.stageId = resolveStage(data.stage).id;
     this.stage = resolveStage(this.stageId);
     this.startStageId = this.carry?.startStageId || this.stageId;
@@ -23,15 +24,29 @@ class GameScene extends Phaser.Scene {
     this.initialization = initialization;
     this.events.once('shutdown', () => { if (this.initialization === initialization) this.initialization = null; });
     const q = new URLSearchParams(location.search);
-    const practice = GamePortal.isAdmin || !!this.carry?.practice || ['god', 't', 'boss', 'stage'].some(key => q.has(key));
-    const run = this.carry ? this.carry.run : await GamePortal.beginRun(this.charId, practice, this.difficultyId, this.stageId).catch(error => ({ error: error.message }));
+    await GamePortal.ready;
     if (this.initialization !== initialization) return;
+    if (!this.carry && this.stageId === 'castle' && !GamePortal.canPlayStage('castle') && (GamePortal.user || !q.has('stage'))) {
+      GamePortal.notice('Conclua a floresta e atravesse o portão para liberar o castelo.');
+      this.scene.start('StageSelect', { char: this.charId });
+      return;
+    }
+    const practice = GamePortal.isAdmin || !!this.carry?.practice || ['god', 't', 'boss', 'stage'].some(key => q.has(key));
+    const run = this.carry ? this.carry.run : await GamePortal.beginRun(this.charId, practice, this.difficultyId, this.stageId).catch(error => ({ error: error.message, status: error.status }));
+    if (this.initialization !== initialization) return;
+    if (this.stageId === 'castle' && run?.status === 403) {
+      GamePortal.notice(run.error || 'O castelo ainda está bloqueado.');
+      this.scene.start('StageSelect', { char: this.charId });
+      return;
+    }
     this.runStart = Promise.resolve(run);
     this.isPractice = practice || !!run?.run_id && !run.ranked;
     if (!this.carry && run?.stage) { this.stageId = resolveStage(run.stage).id; this.stage = resolveStage(this.stageId); this.startStageId = this.stageId; }
     this.difficultyId = resolveDifficulty(run?.difficulty || this.difficultyId).id;
     this.difficulty = resolveDifficulty(this.difficultyId);
     this.buildScene(run?.settings || GamePortal.settings || {});
+    if (this.stageId === 'castle') await this.playCastleArrival();
+    if (this.initialization !== initialization) return;
     this.gameReady = true;
   }
 
@@ -56,9 +71,9 @@ class GameScene extends Phaser.Scene {
     this.elapsedBefore = this.carry?.elapsed || 0;
     this.totalKills = this.carry?.kills || 0;
     this.totalDamage = this.carry?.damage || 0;
-    this.stageHpMul = this.carry ? 1.8 : 1;
-    this.stageSpawnMul = this.carry ? 1.15 : 1;
-    this.stageDamageMul = this.carry ? 1.2 : 1;
+    this.stageHpMul = this.carry ? 1.8 : this.checkpoint?.stageHpMul || 1;
+    this.stageSpawnMul = this.carry ? 1.15 : this.checkpoint?.stageSpawnMul || 1;
+    this.stageDamageMul = this.carry ? 1.2 : this.checkpoint?.stageDamageMul || 1;
     this.saveError = this.carry?.saveError || null;
     this.stageCleared = false;
     this.transitioning = false;
@@ -66,11 +81,12 @@ class GameScene extends Phaser.Scene {
     this.ended = false;
     this.levelUpOpen = false;
     this.chestOpen = false;
-    this.pendingLevels = this.carry?.pendingLevels || 0;
+    this.pendingLevels = this.carry?.pendingLevels || this.checkpoint?.pendingLevels || 0;
     this.lastOffer = [];
     this.spawningEnabled = true;
     this.bossStarted = false;
     this.boss = null;
+    this.finale = null;
     this.hazards = [];
     this.botInput = null;
     this.requestDash = false;
@@ -84,6 +100,7 @@ class GameScene extends Phaser.Scene {
     const def = CHARACTERS[this.charId];
     this.player = new Player(this, def, CONFIG.player.start.x, CONFIG.player.start.y);
     if (this.carry) restorePlayerState(this.player, this.carry.player);
+    else if (this.checkpoint) restorePlayerState(this.player, this.checkpoint.player);
     else this.player.addPower(def.startPower);
 
     this.pShots = new PlayerShots(this);
@@ -91,9 +108,16 @@ class GameScene extends Phaser.Scene {
     this.gems = new Gems(this);
     this.enemies = new EnemyManager(this);
     this.progression = new ProgressionSystem(this);
-    this.progression.consumed = new Set(this.carry?.consumed || []);
-    this.progression.completed = new Set(this.carry?.completed || []);
+    this.progression.consumed = new Set(this.carry?.consumed || this.checkpoint?.consumed || []);
+    this.progression.completed = new Set(this.carry?.completed || this.checkpoint?.completed || []);
     this.encounters = new EncounterDirector(this);
+    this.phaseCheckpoint = {
+      player: capturePlayerState(this.player),
+      consumed: [...this.progression.consumed], completed: [...this.progression.completed],
+      pendingLevels: this.pendingLevels,
+      stageHpMul: this.stageHpMul, stageSpawnMul: this.stageSpawnMul, stageDamageMul: this.stageDamageMul,
+    };
+    this.phaseCheckpoint.player.kills = 0;
 
     // Câmera
     const cam = this.cameras.main;
@@ -125,9 +149,29 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointerup', p => { if (this.joy.id !== p.id) return; this.joy.active = false; this.joy.x = 0; this.joy.y = 0; });
 
     this.scene.launch('UI', { game: this });
+    this.scene.get('UI').scene.setVisible(true);
     this.events.once('shutdown', () => { this.game.scene.stop('UI'); });
 
     this.time.delayedCall(900, () => this.announce('Fase ' + this.stage.number + ' — ' + this.stage.shortName, this.stage.color));
+  }
+
+  playCastleArrival() {
+    const entry = this.world.entry;
+    if (!entry) return Promise.resolve();
+    const p = this.player;
+    p.x = entry.x; p.y = entry.startY;
+    p.sprite.setPosition(p.x, p.y).setDepth(p.y + 20);
+    p.shadow.setPosition(p.x, p.y + 20);
+    p.sprite.anims.resume();
+    this.cameras.main.centerOn(p.x, p.y);
+    return new Promise(resolve => {
+      const done = () => { this.events.off('shutdown', done); resolve(); };
+      this.events.once('shutdown', done);
+      this.tweens.add({ targets: p, y: entry.endY, duration: 1250, ease: 'Sine.easeOut',
+        onUpdate: () => { p.sprite.setPosition(p.x, p.y).setDepth(p.y + 20); p.shadow.setPosition(p.x, p.y + 20); },
+        onComplete: () => { p.sprite.anims.pause(); p.invuln = 2; done(); },
+      });
+    });
   }
 
   // ---------------------------------------------------------- utilidades usadas por poderes/inimigos
@@ -325,14 +369,21 @@ class GameScene extends Phaser.Scene {
       return;
     }
     this.ended = true;
-    this.gems.magnetAll();
+    this.spawningEnabled = false;
+    this.enemyShots.clear(); this.hazards.length = 0; this.fx.ground.length = 0;
+    for (const shot of this.pShots.items) if (shot.live) this.pShots.kill(shot);
+    for (const gem of this.gems.items) { gem.live = false; gem.setVisible(false); }
+    for (const power of this.player.powers) power.destroy();
+    if (!this.isPractice && !GamePortal.user) GamePortal.recordGuestVictory();
+    this.submitResult(true);
     Sfx.play('win');
-    this.time.delayedCall(900, () => this.showEnd(true));
+    this.scene.get('UI').scene.setVisible(false);
+    this.finale = new CastleFinale(this, () => this.showEnd(true));
   }
 
   nearCastleGate() {
     const gate = this.world?.gate;
-    return this.stageId === 'forest' && gate && Math.hypot(this.player.x - gate.x, this.player.y - gate.y) <= 150;
+    return this.stageId === 'forest' && gate && (this.world.isAtCastleDoor ? this.world.isAtCastleDoor(this.player) : Math.hypot(this.player.x - gate.x, this.player.y - gate.y) <= 150);
   }
 
   async enterCastle() {
@@ -355,6 +406,7 @@ class GameScene extends Phaser.Scene {
       GamePortal.notice(carry.saveError);
     }
     if (this.initialization !== initialization || this.ended) return false;
+    if (!carry.run?.run_id && !carry.practice && !carry.saveError && !GamePortal.user) GamePortal.recordGuestAdvance();
     this.scene.restart({ char: this.charId, difficulty: this.difficultyId, stage: 'castle', carry });
     return true;
   }
@@ -391,7 +443,7 @@ class GameScene extends Phaser.Scene {
   showEnd(win) {
     const submission = this.submitResult(win);
     this.scene.launch('End', {
-      win, time: this.totalTime, stage: this.stageId, startStage: this.startStageId, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId, difficulty: this.difficultyId,
+      win, time: this.totalTime, stage: this.stageId, startStage: this.startStageId, checkpoint: this.phaseCheckpoint, level: this.player.level, kills: this.totalKills, damage: this.totalDamage, points: this.points, practice: this.isPractice, submission, char: this.charId, difficulty: this.difficultyId,
       powers: this.player.powers.map((w) => ({ icon: w.def.icon, name: w.def.name, level: w.level })),
     });
     this.scene.pause();
@@ -419,7 +471,7 @@ class GameScene extends Phaser.Scene {
     const dt = Math.min(delta / 1000, 0.05);
     this.visualTime += dt;
     this.drawJoystick();
-    if (this.ended) { this.fx.update(dt); this.world.update(dt, this.visualTime); return; }
+    if (this.ended) { this.fx.update(dt); this.world.update(dt, this.visualTime); this.finale?.update(Math.max(0, delta / 1000)); return; }
     const input = this.readInput();
     if (input.interact) { this.enterCastle(); if (this.transitioning) return; }
     // A travessia segura após o chefe não gera pontuação de sobrevivência.
