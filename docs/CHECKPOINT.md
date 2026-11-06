@@ -145,3 +145,12 @@ O servidor de contas ainda não foi publicado na internet. O ranking valida valo
   e [RETOMADA-JORNADA.md](RETOMADA-JORNADA.md).
 - Snapshot: `snapshot/pre-fases-cutscene-20261106-100233`; código e backup
   consistente de dados privados mantidos fora do projeto publicado.
+
+## Miniaturas e porta integrada — 06/11/2026
+
+- Imagens das fases usam a arte dos mapas, com vegetação, trilha, lampiões,
+  arena, colunas e tochas; teaser com ruínas e névoa. Recorte 312×154.
+- Porta interna embutida na parede sul; abertura visual/física alinhada
+  em 144px, corredor de chegada livre e alas sólidas em y3750.
+- Geometria/dash e chegada conferidos no navegador; jornada completa 6/6,
+  zero erros JS; revisão independente sem achados. [VISUAL-FASES.md](VISUAL-FASES.md).

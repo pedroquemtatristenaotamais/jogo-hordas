@@ -52,6 +52,10 @@ sem dano adicional, inimigos ou pontuação gerada durante a animação.
 As faixas e legendas usam uma câmera própria, independente do zoom do mundo.
 O painel de contas fica oculto durante a cutscene e volta nas telas normais.
 
+As imagens das fases foram detalhadas com a arte real dos mapas, e a porta
+interna foi integrada à faixa de pedra da parede sul. Detalhes e evidência
+em [VISUAL-FASES.md](VISUAL-FASES.md).
+
 ## Arquivos e recuperação
 
 `js/selection.js`: StageSelect/Difficulty; `js/portal.js`: perfil/contas;

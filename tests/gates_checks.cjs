@@ -78,6 +78,13 @@ function checkGeometry() {
       }
     }
     reports.push('castle south arrival remains free for radii 12/24/40');
+    for (const radius of [12, 24, 40]) {
+      for (const x of [200, 800, 1700, 2300, 3200, 3800]) {
+        const entity = travel(castle, { x, y: 3600, radius }, 0, 6);
+        check(entity.y <= 3750 - radius + .01, 'Castle south wall can be crossed beside the inset door');
+      }
+    }
+    reports.push('inset castle door shares solid south wall with a free central opening');
     return reports;
   } finally {
     for (const child of [...scene.children.list]) if (!before.has(child)) child.destroy();

@@ -88,7 +88,7 @@ class World {
     const s = this.scene, W = this.W, H = this.H, B = this.B, A = this.A;
     // Fica neste build, pois ForestWorld sobrescreve a construção do mapa.
     // Nem a porta sul nem sua reserva devem nascer no construtor compartilhado.
-    this.entry = { x: W / 2, startY: H - B - 44, endY: H - B - 210 };
+    this.entry = { x: W / 2, startY: H - B - 44, endY: H - B - 210, wallY: H - B - 100 };
 
     SPR.canvas(s, 'blotch', 128, 128, (g) => {
       const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -145,10 +145,19 @@ class World {
 
   buildCastleEntry() {
     const x = this.entry.x, y = this.H - this.B;
-    // Vista de dentro da mesma porta atravessada na floresta. O piso claro
-    // conduz ao pátio; o arco fica atrás do herói durante sua chegada.
+    // A abertura pertence à faixa de pedra da parede sul; o arco não é um
+    // objeto solto no pátio. Só o corredor central atravessa essa parede.
+    const front = this.entry.wallY, gap = 72, height = this.H - front;
+    for (const [left, right] of [[0, x - gap], [x + gap, this.W]]) {
+      this.scene.add.tileSprite((left + right) / 2, front + height / 2, right - left, height, 'wall').setDepth(-9000);
+    }
+    const trim = this.scene.add.graphics().setDepth(-8990);
+    for (const [left, right] of [[0, x - gap], [x + gap, this.W]]) {
+      trim.fillStyle(0x0c0a12).fillRect(left, front - 5, right - left, 8);
+      trim.fillStyle(0x746777, .55).fillRect(left, front, right - left, 3);
+    }
     this.scene.add.tileSprite(x, (this.entry.endY + y) / 2, 170, y - this.entry.endY + 20, 'path').setDepth(-9480);
-    this.prop('forest_castle_entry', x, y + 38, { tint: 0xe0d5df }).setDepth(this.entry.endY - 1);
+    this.entryDoor = this.prop('forest_castle_entry', x, this.H, { tint: 0xddd0f0 }).setScale(1.2).setDepth(-8980);
     for (const side of [-1, 1]) {
       this.prop('banner', x + side * 204, y - 26);
       this.torch(x + side * 151, y - 25);
@@ -338,6 +347,7 @@ class World {
     }
     e.x = clamp(e.x, this.B + r, this.W - this.B - r);
     e.y = clamp(e.y, this.B + r, this.H - this.B - r);
+    this.constrainCastleEntry(e);
     if (e.noObs || e.ghost || (e.def && (e.def.kind === 'flyer' || e.def.fly))) return;
     const list = this.solids.query(e.x, e.y, r, this.tmp);
     for (let i = 0; i < list.length; i++) {
@@ -345,6 +355,21 @@ class World {
       if (d2 >= rr * rr) continue;
       const d = Math.sqrt(d2) || 0.01, push = rr - d;
       e.x += dx / d * push; e.y += dy / d * push;
+    }
+    this.constrainCastleEntry(e);
+  }
+
+  constrainCastleEntry(e) {
+    if (!this.entry || e.y + (e.radius || 12) < this.entry.wallY) return;
+    const r = e.radius || 12, front = this.entry.wallY;
+    for (const side of [-1, 1]) {
+      const edge = this.entry.x + side * 72;
+      const px = side < 0 ? Math.min(e.x, edge) : Math.max(e.x, edge);
+      const py = Math.max(e.y, front), dx = e.x - px, dy = e.y - py, d2 = dx * dx + dy * dy;
+      if (d2 >= r * r) continue;
+      if (d2 > 0) { const push = r / Math.sqrt(d2) - 1; e.x += dx * push; e.y += dy * push; }
+      else if (Math.abs(e.x - edge) < e.y - front) e.x = edge - side * r;
+      else e.y = front - r;
     }
   }
 

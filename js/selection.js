@@ -54,45 +54,8 @@ class StageSelectScene extends Phaser.Scene {
     this.cameras.main.fadeIn(250);
   }
   stageArt(id, x, y) {
-    const art = this.add.graphics().setDepth(11);
-    art.fillStyle(id === 'forest' ? 0x111e22 : id === 'castle' ? 0x171625 : 0x181725).fillRect(x, y, 312, 154);
-    art.fillStyle(0xb4b6bd, 0.55).fillCircle(x + 245, y + 34, 19);
-    art.fillStyle(0x11131f).fillTriangle(x, y + 120, x + 83, y + 40, x + 175, y + 120);
-    art.fillTriangle(x + 122, y + 120, x + 216, y + 54, x + 312, y + 120);
-    if (id === 'forest') {
-      art.fillStyle(0x283a31).fillTriangle(x + 123, y + 154, x + 158, y + 90, x + 205, y + 154);
-      for (let i = 0; i < 7; i++) {
-        const treeX = x + 12 + i * 47, top = y + 17 + (i % 3) * 13;
-        art.fillStyle(0x2b2a25).fillRect(treeX + 8, top + 48, 7, 80);
-        art.fillStyle(i % 2 ? 0x223c32 : 0x1b302b).fillTriangle(treeX - 16, top + 83, treeX + 11, top, treeX + 40, top + 83);
-        art.fillTriangle(treeX - 22, top + 108, treeX + 11, top + 30, treeX + 46, top + 108);
-      }
-      for (const lampX of [113, 199]) {
-        art.fillStyle(0x5b4730).fillRect(x + lampX, y + 110, 3, 31);
-        art.fillStyle(0xf5ca79, 0.12).fillCircle(x + lampX + 1, y + 109, 16);
-        art.fillStyle(0xecc278).fillRect(x + lampX - 3, y + 104, 10, 10);
-      }
-    } else if (id === 'castle') {
-      art.fillStyle(0x3c3945).fillRect(x + 72, y + 63, 169, 90);
-      art.fillStyle(0x4d4651).fillRect(x + 57, y + 37, 43, 117).fillRect(x + 214, y + 37, 43, 117);
-      art.fillStyle(0x665662);
-      for (let i = 0; i < 4; i++) {
-        art.fillRect(x + 57 + i * 12, y + 27, 7, 15).fillRect(x + 214 + i * 12, y + 27, 7, 15);
-      }
-      art.fillStyle(0x75616a);
-      for (let row = 0; row < 5; row++) for (let column = 0; column < 8; column++) {
-        art.fillRect(x + 76 + column * 20 + (row % 2) * 7, y + 69 + row * 16, 14, 1);
-      }
-      art.fillStyle(0x090a12).fillRect(x + 139, y + 110, 36, 44).fillCircle(x + 157, y + 110, 18);
-      art.fillStyle(0xe6b56c).fillRect(x + 76, y + 64, 7, 17).fillRect(x + 232, y + 64, 7, 17);
-      art.fillStyle(0xd1a462, 0.14).fillCircle(x + 79, y + 72, 17).fillCircle(x + 235, y + 72, 17);
-    } else {
-      art.fillStyle(0x454052).fillTriangle(x + 32, y + 154, x + 133, y + 56, x + 230, y + 154);
-      art.fillStyle(0x353247).fillTriangle(x + 142, y + 154, x + 238, y + 72, x + 312, y + 154);
-      for (let i = 0; i < 3; i++) art.fillStyle(0x89849d, 0.08).fillRect(x, y + 99 + i * 17, 312, 14);
-      mkText(this, x + 156, y + 83, '?', 52, '#c7bcdc').setOrigin(0.5).setAlpha(0.65).setDepth(12);
-    }
-    return art;
+    const key = drawStagePreview(this, id);
+    return this.add.image(x, y, key).setOrigin(0).setDepth(11);
   }
   refreshProgress() {
     this.cards.forEach((card) => {
@@ -100,7 +63,7 @@ class StageSelectScene extends Phaser.Scene {
       card.status.setText(card.id === 'soon' ? 'AINDA NÃO REVELADO' : playable ? (card.id === 'forest' ? 'INICIAR CAMPANHA' : 'ENTRAR NO CASTELO') : 'BLOQUEADO · CONCLUA A FLORESTA');
       card.status.setFontSize(playable || card.id === 'soon' ? 16 : 13);
       card.status.setColor(playable ? '#efd59c' : '#9e8eaa');
-      card.art.setAlpha(playable ? 1 : 0.5);
+      card.art.setAlpha(playable ? 1 : 0.78);
       if (card.panel.input) card.panel.input.cursor = playable ? 'pointer' : 'default';
     });
     this.select(this.sel);

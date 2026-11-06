@@ -1,5 +1,8 @@
 # Retomada — fases, progresso e cutscene
 
+Último ajuste visual: miniaturas detalhadas e porta embutida na parede sul;
+ver [VISUAL-FASES.md](VISUAL-FASES.md). Base desse ajuste: e194cbf.
+
 Base `1bed7c2`, trabalho em `main`, projeto em
 `/home/escola/Downloads/jogo-hordas`. Pedido integral e contratos estão em
 `docs/superpowers/specs/2026-11-06-fases-progresso-finale-design.md`;
